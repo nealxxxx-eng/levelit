@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>LevelIt Icon B — Final</title>
+<style>
+  body {
+    background: #1a1a2e;
+    color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+    gap: 40px;
+  }
+  h1 { font-size: 24px; margin: 0; }
+  .subtitle { color: #888; font-size: 14px; }
+  .row { display: flex; gap: 40px; flex-wrap: wrap; justify-content: center; align-items: flex-end; }
+  .variant { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .variant h3 { color: #aaa; font-size: 14px; margin: 0; }
+  .variant p { color: #666; font-size: 12px; margin: 0; }
+  canvas { border-radius: 56px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+  .small canvas { border-radius: 28px; }
+  .tiny canvas { border-radius: 16px; }
+  .watch canvas { border-radius: 50%; }
+  .export-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .btn {
+    background: #FF9500; color: #000; border: none;
+    padding: 10px 24px; border-radius: 10px; cursor: pointer;
+    font-size: 14px; font-weight: 600;
+  }
+  .btn:hover { background: #FFa820; }
+  .btn.secondary { background: #333; color: #ddd; }
+  .btn.secondary:hover { background: #444; }
+  .sep { width: 100%; height: 1px; background: #333; margin: 10px 0; }
+  .context-row {
+    display: flex; gap: 24px; align-items: center;
+    background: #000; padding: 20px 32px; border-radius: 20px;
+  }
+  .context-label { color: #666; font-size: 11px; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>方案 B — 进度环焰心 (精修版)</h1>
+<p class="subtitle">深色底 / 浅色底 / 自适应色 三种模式 + Watch 圆形</p>
+
+<!-- 三种模式大图 -->
+<div class="row">
+  <div class="variant">
+    <h3>浅色模式 (默认)</h3>
+    <canvas id="light" width="256" height="256"></canvas>
+  </div>
+  <div class="variant">
+    <h3>深色模式</h3>
+    <canvas id="dark" width="256" height="256"></canvas>
+  </div>
+  <div class="variant">
+    <h3>自适应 (Tinted)</h3>
+    <canvas id="tinted" width="256" height="256"></canvas>
+  </div>
+  <div class="variant">
+    <h3>Watch 圆形</h3>
+    <div class="watch">
+      <canvas id="watch" width="256" height="256"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- 模拟实际尺寸 -->
+<div class="sep"></div>
+<p class="subtitle">模拟实际显示尺寸</p>
+<div class="context-row">
+  <div class="variant tiny">
+    <canvas id="ctx29" width="58" height="58"></canvas>
+    <p class="context-label">29pt@2x</p>
+  </div>
+  <div class="variant tiny">
+    <canvas id="ctx40" width="80" height="80"></canvas>
+    <p class="context-label">40pt@2x</p>
+  </div>
+  <div class="variant small">
+    <canvas id="ctx60" width="120" height="120"></canvas>
+    <p class="context-label">60pt@2x</p>
+  </div>
+  <div class="variant small">
+    <canvas id="ctx76" width="152" height="152"></canvas>
+    <p class="context-label">76pt@2x</p>
+  </div>
+  <div class="variant">
+    <canvas id="ctx512" width="256" height="256"></canvas>
+    <p class="context-label">512pt@2x</p>
+  </div>
+</div>
+
+<!-- 导出按钮 -->
+<div class="sep"></div>
+<div class="export-row">
+  <button class="btn" onclick="exportAll()">一键导出全部 (1024px)</button>
+  <button class="btn secondary" onclick="exportSingle('light')">导出浅色</button>
+  <button class="btn secondary" onclick="exportSingle('dark')">导出深色</button>
+  <button class="btn secondary" onclick="exportSingle('tinted')">导出自适应</button>
+  <button class="btn secondary" onclick="exportSingle('watch')">导出 Watch</button>
+</div>
+
+<canvas id="exportCanvas" width="1024" height="1024" style="display:none;"></canvas>
+
+<script>
+// ============================================================
+// 主绘制函数 — 方案 B 精修版
+// ============================================================
+function drawIcon(ctx, s, mode) {
+  // mode: 'light' | 'dark' | 'tinted' | 'watch'
+  const f = s / 256;
+  ctx.save();
+  ctx.clearRect(0, 0, s, s);
+
+  const cx = s * 0.5;
+  const cy = s * 0.5;
+
+  // === Background ===
+  if (mode === 'light') {
+    // Rich dark background
+    const bg = ctx.createLinearGradient(0, 0, s * 0.3, s);
+    bg.addColorStop(0, '#1E1E22');
+    bg.addColorStop(1, '#111113');
+    ctx.fillStyle = bg;
+    roundRect(ctx, 0, 0, s, s, 56 * f);
+    ctx.fill();
+  } else if (mode === 'dark') {
+    // Pure black for dark mode
+    const bg = ctx.createLinearGradient(0, 0, s * 0.3, s);
+    bg.addColorStop(0, '#0A0A0C');
+    bg.addColorStop(1, '#000000');
+    ctx.fillStyle = bg;
+    roundRect(ctx, 0, 0, s, s, 56 * f);
+    ctx.fill();
+  } else if (mode === 'tinted') {
+    // Warm dark tint
+    const bg = ctx.createLinearGradient(0, 0, s * 0.3, s);
+    bg.addColorStop(0, '#1A1510');
+    bg.addColorStop(1, '#0F0C08');
+    ctx.fillStyle = bg;
+    roundRect(ctx, 0, 0, s, s, 56 * f);
+    ctx.fill();
+  } else if (mode === 'watch') {
+    // Watch: circle clip, dark bg
+    ctx.beginPath();
+    ctx.arc(cx, cy, s * 0.5, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    const bg = ctx.createLinearGradient(0, 0, s * 0.3, s);
+    bg.addColorStop(0, '#1A1A1E');
+    bg.addColorStop(1, '#0D0D0F');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, s, s);
+  }
+
+  // === Ambient glow ===
+  const glow1 = ctx.createRadialGradient(cx, cy * 0.9, 0, cx, cy * 0.9, s * 0.45);
+  glow1.addColorStop(0, 'rgba(255,149,0,0.10)');
+  glow1.addColorStop(0.6, 'rgba(255,100,0,0.03)');
+  glow1.addColorStop(1, 'rgba(255,149,0,0)');
+  ctx.fillStyle = glow1;
+  ctx.fillRect(0, 0, s, s);
+
+  // === Ring config ===
+  const radius = s * 0.34;
+  const ringWidth = 14 * f;
+  const progressRatio = 0.78; // 78%
+  const startAngle = -Math.PI * 0.5;
+  const endAngle = startAngle + Math.PI * 2 * progressRatio;
+  const gapAngle = 0.08; // small gap at start
+
+  // === Background ring track ===
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = ringWidth;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // === Progress ring with gradient ===
+  // Create gradient along the arc
+  const ringGrad = ctx.createConicGradient(startAngle, cx, cy);
+  ringGrad.addColorStop(0, '#FFCC02');
+  ringGrad.addColorStop(progressRatio * 0.3, '#FF9500');
+  ringGrad.addColorStop(progressRatio * 0.7, '#FF7B00');
+  ringGrad.addColorStop(progressRatio, '#FF5500');
+  ringGrad.addColorStop(progressRatio + 0.001, 'transparent');
+  ringGrad.addColorStop(1, 'transparent');
+
+  ctx.strokeStyle = ringGrad;
+  ctx.lineWidth = ringWidth;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, startAngle + gapAngle, endAngle);
+  ctx.stroke();
+
+  // === Ring end cap glow ===
+  const dotX = cx + radius * Math.cos(endAngle);
+  const dotY = cy + radius * Math.sin(endAngle);
+  const dotGlow = ctx.createRadialGradient(dotX, dotY, 0, dotX, dotY, 18 * f);
+  dotGlow.addColorStop(0, 'rgba(255,85,0,0.35)');
+  dotGlow.addColorStop(0.5, 'rgba(255,120,0,0.10)');
+  dotGlow.addColorStop(1, 'rgba(255,149,0,0)');
+  ctx.fillStyle = dotGlow;
+  ctx.beginPath();
+  ctx.arc(dotX, dotY, 18 * f, 0, Math.PI * 2);
+  ctx.fill();
+
+  // === Center flame ===
+  drawFlame(ctx, cx, cy + s * 0.07, s * 0.24, f, mode);
+
+  ctx.restore();
+}
+
+function drawFlame(ctx, cx, baseY, height, f, mode) {
+  ctx.save();
+
+  // Shadow/glow beneath flame
+  const flameGlow = ctx.createRadialGradient(cx, baseY, 0, cx, baseY, height * 0.6);
+  flameGlow.addColorStop(0, 'rgba(255,120,0,0.15)');
+  flameGlow.addColorStop(1, 'rgba(255,120,0,0)');
+  ctx.fillStyle = flameGlow;
+  ctx.beginPath();
+  ctx.arc(cx, baseY - height * 0.2, height * 0.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // === Outer flame ===
+  const outerGrad = ctx.createLinearGradient(cx, baseY, cx, baseY - height);
+  outerGrad.addColorStop(0, '#FF5500');
+  outerGrad.addColorStop(0.3, '#FF7B00');
+  outerGrad.addColorStop(0.6, '#FF9500');
+  outerGrad.addColorStop(0.85, '#FFBB00');
+  outerGrad.addColorStop(1, '#FFDD44');
+  ctx.fillStyle = outerGrad;
+
+  ctx.beginPath();
+  ctx.moveTo(cx, baseY);
+  // Left contour
+  ctx.bezierCurveTo(
+    cx - height * 0.38, baseY - height * 0.08,
+    cx - height * 0.52, baseY - height * 0.42,
+    cx - height * 0.30, baseY - height * 0.72
+  );
+  // Left tip curve
+  ctx.bezierCurveTo(
+    cx - height * 0.18, baseY - height * 0.88,
+    cx - height * 0.08, baseY - height * 0.97,
+    cx, baseY - height * 1.02
+  );
+  // Right tip curve
+  ctx.bezierCurveTo(
+    cx + height * 0.08, baseY - height * 0.97,
+    cx + height * 0.18, baseY - height * 0.88,
+    cx + height * 0.30, baseY - height * 0.72
+  );
+  // Right contour
+  ctx.bezierCurveTo(
+    cx + height * 0.52, baseY - height * 0.42,
+    cx + height * 0.38, baseY - height * 0.08,
+    cx, baseY
+  );
+  ctx.fill();
+
+  // === Mid flame layer ===
+  const midH = height * 0.65;
+  const midGrad = ctx.createLinearGradient(cx, baseY, cx, baseY - midH);
+  midGrad.addColorStop(0, '#FFB833');
+  midGrad.addColorStop(0.5, '#FFCC44');
+  midGrad.addColorStop(1, '#FFE577');
+  ctx.fillStyle = midGrad;
+
+  ctx.beginPath();
+  ctx.moveTo(cx, baseY);
+  ctx.bezierCurveTo(
+    cx - midH * 0.35, baseY - midH * 0.12,
+    cx - midH * 0.42, baseY - midH * 0.48,
+    cx - midH * 0.15, baseY - midH * 0.82
+  );
+  ctx.bezierCurveTo(
+    cx - midH * 0.05, baseY - midH * 0.95,
+    cx + midH * 0.05, baseY - midH * 0.95,
+    cx + midH * 0.15, baseY - midH * 0.82
+  );
+  ctx.bezierCurveTo(
+    cx + midH * 0.42, baseY - midH * 0.48,
+    cx + midH * 0.35, baseY - midH * 0.12,
+    cx, baseY
+  );
+  ctx.fill();
+
+  // === Inner flame (bright core) ===
+  const innerH = height * 0.38;
+  const innerGrad = ctx.createLinearGradient(cx, baseY, cx, baseY - innerH);
+  innerGrad.addColorStop(0, '#FFF3D4');
+  innerGrad.addColorStop(0.4, '#FFEEBC');
+  innerGrad.addColorStop(1, '#FFE088');
+  ctx.fillStyle = innerGrad;
+
+  ctx.beginPath();
+  ctx.moveTo(cx, baseY);
+  ctx.bezierCurveTo(
+    cx - innerH * 0.32, baseY - innerH * 0.15,
+    cx - innerH * 0.38, baseY - innerH * 0.55,
+    cx - innerH * 0.06, baseY - innerH * 0.88
+  );
+  ctx.bezierCurveTo(
+    cx, baseY - innerH * 1.0,
+    cx, baseY - innerH * 1.0,
+    cx + innerH * 0.06, baseY - innerH * 0.88
+  );
+  ctx.bezierCurveTo(
+    cx + innerH * 0.38, baseY - innerH * 0.55,
+    cx + innerH * 0.32, baseY - innerH * 0.15,
+    cx, baseY
+  );
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ============================================================
+// Utility
+// ============================================================
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function exportSingle(mode) {
+  const c = document.getElementById('exportCanvas');
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 1024, 1024);
+  drawIcon(ctx, 1024, mode);
+  c.toBlob(function(blob) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const suffix = {light:'', dark:'_dark', tinted:'_tinted', watch:'_watch'}[mode];
+    a.download = `LevelIt_Icon${suffix}_1024.png`;
+    a.click();
+  }, 'image/png');
+}
+
+function exportAll() {
+  ['light','dark','tinted','watch'].forEach((mode, i) => {
+    setTimeout(() => exportSingle(mode), i * 300);
+  });
+}
+
+// ============================================================
+// Render
+// ============================================================
+window.onload = function() {
+  // Main previews
+  ['light','dark','tinted','watch'].forEach(mode => {
+    const c = document.getElementById(mode);
+    drawIcon(c.getContext('2d'), 256, mode);
+  });
+
+  // Context size previews (all light mode)
+  [['ctx29',58],['ctx40',80],['ctx60',120],['ctx76',152],['ctx512',256]].forEach(([id, size]) => {
+    const c = document.getElementById(id);
+    drawIcon(c.getContext('2d'), size, 'light');
+  });
+};
+</script>
+</body>
+</html>

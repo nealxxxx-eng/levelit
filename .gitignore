@@ -1,0 +1,47 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.template
+*.local
+*.pem
+*.p12
+*.mobileprovision
+
+# Swift Package Manager
+.build/
+.swiftpm/xcode/xcuserdata/
+
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+*.xcscmblueprint
+*.moved-aside
+*.xccheckout
+xcuserdata/
+**/xcuserdata/
+
+# Xcode build products and indexes
+*.dSYM/
+*.ipa
+*.xcarchive
+Index.noindex/
+ModuleCache.noindex/
+SDKStatCaches.noindex/
+
+# Editor and local tooling
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and temporary files
+*.log
+tmp/
+*.tmp

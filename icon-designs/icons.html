@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>LevelIt App Icon Designs</title>
+<style>
+  body {
+    background: #1a1a2e;
+    color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+    gap: 60px;
+  }
+  h1 { font-size: 28px; margin-bottom: 0; }
+  .subtitle { color: #888; margin-top: 8px; }
+  .designs {
+    display: flex;
+    gap: 60px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .design {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .design h2 { font-size: 18px; color: #ccc; margin: 0; }
+  .design p { color: #888; font-size: 13px; max-width: 280px; text-align: center; margin: 0; }
+  canvas {
+    border-radius: 56px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  .previews {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+  }
+  .preview-small {
+    border-radius: 14px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+  .export-btn {
+    background: #FF9500;
+    color: #000;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .export-btn:hover { background: #FFa820; }
+</style>
+</head>
+<body>
+
+<h1>磨平 LevelIt — App Icon 设计方案</h1>
+<p class="subtitle">点击"导出"按钮可保存 1024x1024 PNG</p>
+
+<div class="designs">
+
+  <!-- 方案 A -->
+  <div class="design">
+    <h2>方案 A — 火焰磨平</h2>
+    <p>火焰从水平线中升起，象征"燃烧热量，磨平债务"。线条干净，辨识度高。</p>
+    <div class="previews">
+      <canvas id="iconA" width="256" height="256"></canvas>
+    </div>
+    <button class="export-btn" onclick="exportIcon('A')">导出 1024px</button>
+  </div>
+
+  <!-- 方案 B -->
+  <div class="design">
+    <h2>方案 B — 进度环焰心</h2>
+    <p>粗圆弧进度环包裹火焰图标，体现"运动消耗进度"的核心交互。</p>
+    <div class="previews">
+      <canvas id="iconB" width="256" height="256"></canvas>
+    </div>
+    <button class="export-btn" onclick="exportIcon('B')">导出 1024px</button>
+  </div>
+
+  <!-- 方案 C -->
+  <div class="design">
+    <h2>方案 C — 收支天平</h2>
+    <p>叉子与火焰分立天平两端，直观表达"吃 vs 动"的核心概念。橙黑撞色。</p>
+    <div class="previews">
+      <canvas id="iconC" width="256" height="256"></canvas>
+    </div>
+    <button class="export-btn" onclick="exportIcon('C')">导出 1024px</button>
+  </div>
+
+</div>
+
+<!-- Hidden export canvases -->
+<canvas id="exportCanvas" width="1024" height="1024" style="display:none;"></canvas>
+
+<script>
+// ============================================================
+// 方案 A — 火焰磨平
+// ============================================================
+function drawIconA(ctx, s) {
+  // s = scale factor (256 for preview, 1024 for export)
+  const f = s / 256;
+  ctx.save();
+
+  // Background gradient - deep dark with subtle warm tint
+  const bg = ctx.createLinearGradient(0, 0, 0, s);
+  bg.addColorStop(0, '#1C1C1E');
+  bg.addColorStop(1, '#0D0D0F');
+  ctx.fillStyle = bg;
+  roundRect(ctx, 0, 0, s, s, 56 * f);
+  ctx.fill();
+
+  // Subtle radial glow behind flame
+  const glow = ctx.createRadialGradient(s*0.5, s*0.42, 0, s*0.5, s*0.42, s*0.38);
+  glow.addColorStop(0, 'rgba(255,149,0,0.12)');
+  glow.addColorStop(1, 'rgba(255,149,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, s, s);
+
+  // Horizontal "level" line
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 2.5 * f;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(s * 0.15, s * 0.62);
+  ctx.lineTo(s * 0.85, s * 0.62);
+  ctx.stroke();
+
+  // Bold level line segment (where flame sits)
+  const lineGrad = ctx.createLinearGradient(s*0.25, 0, s*0.75, 0);
+  lineGrad.addColorStop(0, '#FF9500');
+  lineGrad.addColorStop(1, '#FF6B00');
+  ctx.strokeStyle = lineGrad;
+  ctx.lineWidth = 4 * f;
+  ctx.beginPath();
+  ctx.moveTo(s * 0.25, s * 0.62);
+  ctx.lineTo(s * 0.75, s * 0.62);
+  ctx.stroke();
+
+  // Main flame
+  drawFlame(ctx, s * 0.5, s * 0.62, s * 0.30, f);
+
+  // Small "leveled" checkmark-like flat line at bottom
+  ctx.strokeStyle = '#FF9500';
+  ctx.lineWidth = 3 * f;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(s * 0.35, s * 0.78);
+  ctx.lineTo(s * 0.45, s * 0.78);
+  ctx.lineTo(s * 0.65, s * 0.78);
+  ctx.stroke();
+
+  // Tiny arrow down from line (representing "leveling")
+  ctx.strokeStyle = 'rgba(255,149,0,0.5)';
+  ctx.lineWidth = 2 * f;
+  ctx.beginPath();
+  ctx.moveTo(s * 0.5, s * 0.78);
+  ctx.lineTo(s * 0.5, s * 0.84);
+  ctx.moveTo(s * 0.46, s * 0.81);
+  ctx.lineTo(s * 0.5, s * 0.84);
+  ctx.lineTo(s * 0.54, s * 0.81);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawFlame(ctx, cx, baseY, height, f) {
+  ctx.save();
+
+  // Outer flame (orange-red)
+  const outerGrad = ctx.createLinearGradient(cx, baseY, cx, baseY - height);
+  outerGrad.addColorStop(0, '#FF6B00');
+  outerGrad.addColorStop(0.5, '#FF9500');
+  outerGrad.addColorStop(1, '#FFCC02');
+  ctx.fillStyle = outerGrad;
+
+  ctx.beginPath();
+  ctx.moveTo(cx, baseY);
+  // Left side
+  ctx.bezierCurveTo(
+    cx - height*0.45, baseY - height*0.15,
+    cx - height*0.55, baseY - height*0.55,
+    cx - height*0.12, baseY - height*0.85
+  );
+  // Top
+  ctx.bezierCurveTo(
+    cx - height*0.05, baseY - height*1.0,
+    cx + height*0.05, baseY - height*1.0,
+    cx + height*0.12, baseY - height*0.85
+  );
+  // Right side
+  ctx.bezierCurveTo(
+    cx + height*0.55, baseY - height*0.55,
+    cx + height*0.45, baseY - height*0.15,
+    cx, baseY
+  );
+  ctx.fill();
+
+  // Inner flame (bright yellow-white)
+  const innerGrad = ctx.createLinearGradient(cx, baseY, cx, baseY - height*0.55);
+  innerGrad.addColorStop(0, '#FFF5E0');
+  innerGrad.addColorStop(1, '#FFCC02');
+  ctx.fillStyle = innerGrad;
+
+  const ih = height * 0.5;
+  ctx.beginPath();
+  ctx.moveTo(cx, baseY);
+  ctx.bezierCurveTo(
+    cx - ih*0.4, baseY - ih*0.2,
+    cx - ih*0.45, baseY - ih*0.6,
+    cx - ih*0.08, baseY - ih*0.9
+  );
+  ctx.bezierCurveTo(
+    cx, baseY - ih*1.0,
+    cx, baseY - ih*1.0,
+    cx + ih*0.08, baseY - ih*0.9
+  );
+  ctx.bezierCurveTo(
+    cx + ih*0.45, baseY - ih*0.6,
+    cx + ih*0.4, baseY - ih*0.2,
+    cx, baseY
+  );
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ============================================================
+// 方案 B — 进度环焰心
+// ============================================================
+function drawIconB(ctx, s) {
+  const f = s / 256;
+  ctx.save();
+
+  // Background
+  const bg = ctx.createLinearGradient(0, 0, s, s);
+  bg.addColorStop(0, '#141416');
+  bg.addColorStop(1, '#1C1C1E');
+  ctx.fillStyle = bg;
+  roundRect(ctx, 0, 0, s, s, 56 * f);
+  ctx.fill();
+
+  const cx = s * 0.5;
+  const cy = s * 0.5;
+  const radius = s * 0.34;
+
+  // Subtle glow
+  const glow = ctx.createRadialGradient(cx, cy, radius*0.3, cx, cy, radius*1.5);
+  glow.addColorStop(0, 'rgba(255,149,0,0.08)');
+  glow.addColorStop(1, 'rgba(255,149,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, s, s);
+
+  // Background ring track
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 12 * f;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Progress ring (~75% filled)
+  const startAngle = -Math.PI * 0.5;
+  const endAngle = startAngle + Math.PI * 2 * 0.75;
+
+  const ringGrad = ctx.createLinearGradient(cx-radius, cy-radius, cx+radius, cy+radius);
+  ringGrad.addColorStop(0, '#FFCC02');
+  ringGrad.addColorStop(0.5, '#FF9500');
+  ringGrad.addColorStop(1, '#FF6B00');
+  ctx.strokeStyle = ringGrad;
+  ctx.lineWidth = 12 * f;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, startAngle, endAngle);
+  ctx.stroke();
+
+  // End dot glow
+  const dotX = cx + radius * Math.cos(endAngle);
+  const dotY = cy + radius * Math.sin(endAngle);
+  const dotGlow = ctx.createRadialGradient(dotX, dotY, 0, dotX, dotY, 12*f);
+  dotGlow.addColorStop(0, 'rgba(255,149,0,0.4)');
+  dotGlow.addColorStop(1, 'rgba(255,149,0,0)');
+  ctx.fillStyle = dotGlow;
+  ctx.beginPath();
+  ctx.arc(dotX, dotY, 12*f, 0, Math.PI*2);
+  ctx.fill();
+
+  // Center flame (smaller)
+  drawFlame(ctx, cx, cy + s*0.08, s * 0.22, f);
+
+  // Percentage text below flame
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = `bold ${14*f}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('75%', cx, cy + s*0.20);
+
+  ctx.restore();
+}
+
+// ============================================================
+// 方案 C — 收支天平
+// ============================================================
+function drawIconC(ctx, s) {
+  const f = s / 256;
+  ctx.save();
+
+  // Background
+  const bg = ctx.createLinearGradient(0, 0, 0, s);
+  bg.addColorStop(0, '#1C1C1E');
+  bg.addColorStop(1, '#0D0D0F');
+  ctx.fillStyle = bg;
+  roundRect(ctx, 0, 0, s, s, 56 * f);
+  ctx.fill();
+
+  const cx = s * 0.5;
+
+  // Subtle glow
+  const glow = ctx.createRadialGradient(cx, s*0.5, 0, cx, s*0.5, s*0.45);
+  glow.addColorStop(0, 'rgba(255,149,0,0.06)');
+  glow.addColorStop(1, 'rgba(255,149,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, s, s);
+
+  // Balance beam (tilted slightly - food side heavier, but almost level)
+  const beamY = s * 0.52;
+  const tilt = -2 * f; // slightly tilted
+
+  // Fulcrum triangle
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath();
+  ctx.moveTo(cx, beamY + 4*f);
+  ctx.lineTo(cx - 12*f, s * 0.72);
+  ctx.lineTo(cx + 12*f, s * 0.72);
+  ctx.closePath();
+  ctx.fill();
+
+  // Beam line
+  const beamGrad = ctx.createLinearGradient(s*0.12, 0, s*0.88, 0);
+  beamGrad.addColorStop(0, '#FF4444');
+  beamGrad.addColorStop(0.4, '#FF9500');
+  beamGrad.addColorStop(0.6, '#FF9500');
+  beamGrad.addColorStop(1, '#FFCC02');
+  ctx.strokeStyle = beamGrad;
+  ctx.lineWidth = 4 * f;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(s * 0.14, beamY + tilt * 4);
+  ctx.lineTo(s * 0.86, beamY - tilt * 4);
+  ctx.stroke();
+
+  // Left side: Fork icon (food/intake)
+  const forkX = s * 0.28;
+  const forkY = beamY - s*0.06 + tilt*4;
+  drawFork(ctx, forkX, forkY, f);
+
+  // Right side: Flame icon (burn/exercise)
+  const flameX = s * 0.72;
+  const flameY = beamY + s*0.01 - tilt*4;
+  drawSmallFlame(ctx, flameX, flameY, s * 0.16, f);
+
+  // Left plate circle (subtle)
+  ctx.strokeStyle = 'rgba(255,68,68,0.25)';
+  ctx.lineWidth = 2 * f;
+  ctx.beginPath();
+  ctx.arc(forkX, forkY - s*0.04, s*0.12, 0, Math.PI*2);
+  ctx.stroke();
+
+  // Right plate circle (subtle)
+  ctx.strokeStyle = 'rgba(255,204,2,0.25)';
+  ctx.lineWidth = 2 * f;
+  ctx.beginPath();
+  ctx.arc(flameX, flameY - s*0.08, s*0.12, 0, Math.PI*2);
+  ctx.stroke();
+
+  // "vs" or equality hint at center top
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.font = `bold ${11*f}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('VS', cx, s * 0.30);
+
+  // Bottom tagline
+  ctx.fillStyle = 'rgba(255,149,0,0.35)';
+  ctx.font = `600 ${10*f}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('LEVEL IT', cx, s * 0.82);
+
+  ctx.restore();
+}
+
+function drawFork(ctx, cx, cy, f) {
+  ctx.save();
+  ctx.strokeStyle = '#FF6B6B';
+  ctx.lineWidth = 3 * f;
+  ctx.lineCap = 'round';
+
+  const h = 36 * f;
+
+  // Handle
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx, cy - h);
+  ctx.stroke();
+
+  // Tines
+  const tineH = 14 * f;
+  const tineW = 5 * f;
+  for (let i = -1; i <= 1; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cx + i * tineW, cy - h);
+    ctx.lineTo(cx + i * tineW, cy - h - tineH);
+    ctx.stroke();
+  }
+
+  // Cross bar
+  ctx.beginPath();
+  ctx.moveTo(cx - tineW - 1*f, cy - h);
+  ctx.lineTo(cx + tineW + 1*f, cy - h);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawSmallFlame(ctx, cx, baseY, height, f) {
+  ctx.save();
+
+  const grad = ctx.createLinearGradient(cx, baseY, cx, baseY - height);
+  grad.addColorStop(0, '#FF9500');
+  grad.addColorStop(0.6, '#FFCC02');
+  grad.addColorStop(1, '#FFF5CC');
+  ctx.fillStyle = grad;
+
+  ctx.beginPath();
+  ctx.moveTo(cx, baseY);
+  ctx.bezierCurveTo(
+    cx - height*0.42, baseY - height*0.15,
+    cx - height*0.50, baseY - height*0.55,
+    cx - height*0.10, baseY - height*0.88
+  );
+  ctx.bezierCurveTo(
+    cx - height*0.03, baseY - height*1.0,
+    cx + height*0.03, baseY - height*1.0,
+    cx + height*0.10, baseY - height*0.88
+  );
+  ctx.bezierCurveTo(
+    cx + height*0.50, baseY - height*0.55,
+    cx + height*0.42, baseY - height*0.15,
+    cx, baseY
+  );
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ============================================================
+// Utility functions
+// ============================================================
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function exportIcon(variant) {
+  const canvas = document.getElementById('exportCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 1024, 1024);
+
+  if (variant === 'A') drawIconA(ctx, 1024);
+  else if (variant === 'B') drawIconB(ctx, 1024);
+  else if (variant === 'C') drawIconC(ctx, 1024);
+
+  canvas.toBlob(function(blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `LevelIt_Icon_${variant}_1024.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, 'image/png');
+}
+
+// ============================================================
+// Render all icons
+// ============================================================
+window.onload = function() {
+  const ctxA = document.getElementById('iconA').getContext('2d');
+  drawIconA(ctxA, 256);
+
+  const ctxB = document.getElementById('iconB').getContext('2d');
+  drawIconB(ctxB, 256);
+
+  const ctxC = document.getElementById('iconC').getContext('2d');
+  drawIconC(ctxC, 256);
+};
+</script>
+</body>
+</html>
