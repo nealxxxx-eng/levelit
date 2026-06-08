@@ -5,25 +5,24 @@ import LevelItShared
 /// 根视图 — 注册门控 + NavigationStack + 路由分发
 struct ContentView: View {
     @State private var navigationPath = NavigationPath()
-    @State private var isRegistered = UserProfileStore.isRegistered
-    @State private var isRestoringFromCloud = false
+    @State private var isAuthenticated = AuthSessionStore.isAuthenticated
+    @State private var isRestoringAccount = false
 
     var body: some View {
         Group {
-            if isRestoringFromCloud {
-                cloudRestoreView
-            } else if !isRegistered {
-                OnboardingProfileView {
-                    withAnimation { isRegistered = true }
+            if isRestoringAccount {
+                accountRestoreView
+            } else if !isAuthenticated {
+                AuthGateView {
+                    withAnimation { isAuthenticated = true }
                 }
             } else {
                 mainApp
             }
         }
         .task {
-            // 首次启动尝试从 CloudKit 恢复
-            guard !isRegistered else { return }
-            await tryRestoreFromCloud()
+            guard isAuthenticated else { return }
+            await restoreFromAliyun()
         }
     }
 
@@ -41,9 +40,9 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - CloudKit 恢复中
+    // MARK: - 阿里云账号恢复
 
-    private var cloudRestoreView: some View {
+    private var accountRestoreView: some View {
         VStack(spacing: DS.Spacing.lg) {
             ProgressView()
                 .scaleEffect(1.3)
@@ -53,22 +52,27 @@ struct ContentView: View {
         }
     }
 
-    private func tryRestoreFromCloud() async {
-        isRestoringFromCloud = true
-        defer { isRestoringFromCloud = false }
-
-        guard await CloudKitService.checkAccountStatus() else { return }
+    private func restoreFromAliyun() async {
+        isRestoringAccount = true
+        defer { isRestoringAccount = false }
 
         do {
-            if let profile = try await CloudKitService.fetch() {
-                UserProfileStore.save(profile)
-                await MainActor.run {
-                    withAnimation { isRegistered = true }
-                }
+            let profile = try await AliyunAuthService.fetchCurrentUser()
+            UserProfileStore.save(profile)
+        } catch AliyunAuthService.AuthError.missingSession {
+            // Token 不存在或已损坏，必须重新登录
+            await MainActor.run {
+                AliyunAuthService.logout()
+                withAnimation { isAuthenticated = false }
+            }
+        } catch AliyunAuthService.AuthError.serverError(let message) where message.hasPrefix("HTTP 401") {
+            // 服务器明确拒绝 token（过期/无效），必须重新登录
+            await MainActor.run {
+                AliyunAuthService.logout()
+                withAnimation { isAuthenticated = false }
             }
         } catch {
-            // 恢复失败不阻塞，让用户走注册流程
-            print("CloudKit restore failed: \(error.localizedDescription)")
+            // 网络错误、超时、服务器临时不可用 — 保持登录状态，静默忽略
         }
     }
 
@@ -140,6 +144,9 @@ struct ContentView: View {
         case .workoutImport:
             WorkoutImportView()
 
+        case .pkChallengeCenter:
+            PKChallengeCenterView()
+
         case .stats:
             StatsView()
 
@@ -151,6 +158,9 @@ struct ContentView: View {
                 if !navigationPath.isEmpty {
                     navigationPath.removeLast()
                 }
+            } onLogout: {
+                navigationPath = NavigationPath()
+                withAnimation { isAuthenticated = false }
             }
 
         case .mealQuotaConfig:
@@ -174,5 +184,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: [DebtTask.self, Achievement.self, UserStats.self], inMemory: true)
+        .modelContainer(for: [DebtTask.self, Achievement.self, UserStats.self, PKChallenge.self], inMemory: true)
 }

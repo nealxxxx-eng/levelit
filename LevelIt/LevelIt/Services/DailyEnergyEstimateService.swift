@@ -79,7 +79,7 @@ enum DailyEnergyEstimateService {
         }
 
         if httpResponse.statusCode == 404 {
-            throw EstimateError.serverError("阿里云 ECS 尚未部署 /api/estimate-daily-energy 新接口，请先发布 levelit-proxy 后重试")
+            throw EstimateError.serverError("服务端尚未部署 /api/estimate-daily-energy 接口，请稍后重试")
         }
 
         guard httpResponse.statusCode == 200 else {

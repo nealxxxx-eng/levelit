@@ -5,7 +5,10 @@ import LevelItShared
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     var onSaved: (() -> Void)?
+    var onLogout: (() -> Void)?
 
+    @State private var displayName: String = "LevelIt 用户"
+    @State private var inviteCode: String = UserProfileStore.current?.inviteCode ?? UserProfile.makeInviteCode()
     @State private var gender: Gender = .male
     @State private var age: Double = Double(AppConstants.ProfileDefaults.defaultAge)
     @State private var heightCM: Double = Double(AppConstants.ProfileDefaults.defaultHeightCM)
@@ -17,9 +20,12 @@ struct SettingsView: View {
     @State private var isEstimating = false
     @State private var estimateError: String?
     @State private var saveMessage: String?
+    @State private var isSavingProfile = false
 
     private var draftProfile: UserProfile {
         UserProfile(
+            displayName: displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "LevelIt 用户" : displayName,
+            inviteCode: inviteCode,
             gender: gender,
             age: Int(age),
             heightCM: Int(heightCM),
@@ -33,19 +39,60 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            accountSection
             profileSection
             energySection
             mealConfigSection
+            sessionSection
         }
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("保存") { saveProfile() }
+                Button(isSavingProfile ? "保存中" : "保存") { saveProfile() }
                     .fontWeight(.semibold)
+                    .disabled(isSavingProfile)
             }
         }
         .onAppear { loadProfile() }
+    }
+
+    private var sessionSection: some View {
+        Section {
+            Button(role: .destructive) {
+                AliyunAuthService.logout()
+                onLogout?()
+            } label: {
+                Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
+            }
+        } footer: {
+            Text("退出后会清除本机 token 和用户资料缓存，再次使用需要重新登录。")
+        }
+    }
+
+    private var accountSection: some View {
+        Section {
+            TextField("昵称", text: $displayName)
+                .textInputAutocapitalization(.never)
+
+            HStack {
+                Text("邀请码")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(inviteCode)
+                    .font(.body.monospaced().weight(.semibold))
+                    .foregroundStyle(DS.Colors.accent)
+                    .textSelection(.enabled)
+            }
+
+            ShareLink(item: "我在 LevelIt 的邀请码是 \(inviteCode)，一起磨平今天这口吧。") {
+                Label("分享邀请码", systemImage: "square.and.arrow.up")
+            }
+        } header: {
+            Text("账号")
+        } footer: {
+            Text("当前版本使用本机资料和系统分享完成邀请；接入 CloudKit 后，邀请码可用于好友绑定和挑战同步。")
+        }
     }
 
     private var profileSection: some View {
@@ -104,7 +151,7 @@ struct SettingsView: View {
 
             if let aiEstimatedTDEE {
                 VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-                    Text("阿里后台估算：\(aiEstimatedTDEE) kcal/天")
+                    Text("AI 估算：\(aiEstimatedTDEE) kcal/天")
                         .font(.body.weight(.semibold))
                     if let aiEstimateSummary, !aiEstimateSummary.isEmpty {
                         Text(aiEstimateSummary)
@@ -136,7 +183,7 @@ struct SettingsView: View {
                     if isEstimating {
                         ProgressView()
                     }
-                    Text(isEstimating ? "正在询问阿里后台..." : "询问阿里后台估算日常消耗")
+                    Text(isEstimating ? "正在估算..." : "AI 估算日常消耗")
                 }
             }
             .disabled(isEstimating)
@@ -251,6 +298,8 @@ struct SettingsView: View {
             activityLevel: .light
         )
 
+        displayName = profile.displayName
+        inviteCode = profile.inviteCode
         gender = profile.gender
         age = Double(profile.age)
         heightCM = Double(profile.heightCM)
@@ -270,13 +319,29 @@ struct SettingsView: View {
     }
 
     private func saveProfile() {
-        UserProfileStore.save(draftProfile)
+        isSavingProfile = true
         estimateError = nil
-        saveMessage = "已保存，默认 TDEE 已更新为 \(draftProfile.tdee) kcal/天"
-        if let onSaved {
-            onSaved()
-        } else {
-            dismiss()
+        saveMessage = nil
+
+        Task {
+            do {
+                let savedProfile = try await AliyunAuthService.updateProfile(draftProfile)
+                await MainActor.run {
+                    UserProfileStore.save(savedProfile)
+                    saveMessage = "已保存，默认 TDEE 已更新为 \(savedProfile.tdee) kcal/天"
+                    isSavingProfile = false
+                    if let onSaved {
+                        onSaved()
+                    } else {
+                        dismiss()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    estimateError = error.localizedDescription
+                    isSavingProfile = false
+                }
+            }
         }
     }
 
@@ -288,16 +353,19 @@ struct SettingsView: View {
         Task {
             do {
                 let result = try await DailyEnergyEstimateService.estimate(profile: draftProfile)
+                var updatedProfile = draftProfile
+                updatedProfile.aiEstimatedTDEE = result.estimatedDailyCalories
+                updatedProfile.aiEstimateSummary = result.summary
+                updatedProfile.aiEstimateUpdatedAt = Date()
                 await MainActor.run {
-                    var updatedProfile = draftProfile
-                    updatedProfile.aiEstimatedTDEE = result.estimatedDailyCalories
-                    updatedProfile.aiEstimateSummary = result.summary
-                    updatedProfile.aiEstimateUpdatedAt = Date()
                     aiEstimatedTDEE = result.estimatedDailyCalories
                     aiEstimateSummary = result.summary
                     aiEstimateUpdatedAt = updatedProfile.aiEstimateUpdatedAt
-                    UserProfileStore.save(updatedProfile)
-                    saveMessage = "已更新默认 TDEE 为 \(result.estimatedDailyCalories) kcal/天"
+                }
+                let savedProfile = try await AliyunAuthService.updateProfile(updatedProfile)
+                await MainActor.run {
+                    UserProfileStore.save(savedProfile)
+                    saveMessage = "已同步默认 TDEE 为 \(result.estimatedDailyCalories) kcal/天"
                     isEstimating = false
                 }
             } catch {

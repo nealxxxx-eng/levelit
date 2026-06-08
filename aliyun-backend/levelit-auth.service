@@ -1,0 +1,17 @@
+[Unit]
+Description=LevelIt Auth Backend
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/levelit-auth
+ExecStart=/usr/bin/node server.js
+Environment=PORT=3001
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/levelit/auth.env
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

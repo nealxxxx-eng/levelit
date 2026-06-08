@@ -2,12 +2,17 @@ import SwiftUI
 import LevelItShared
 
 struct OnboardingProfileView: View {
+    var initialIdentifier: String = ""
+    var initialPassword: String = ""
     var onComplete: () -> Void
 
     @State private var step = 0
+    @State private var identifier: String = ""
+    @State private var password: String = ""
+    @State private var displayName: String = ""
     @State private var gender: Gender = .male
-    @State private var age: Double = Double(AppConstants.ProfileDefaults.defaultAge)
-    @State private var heightCM: Double = Double(AppConstants.ProfileDefaults.defaultHeightCM)
+    @State private var age: Int = AppConstants.ProfileDefaults.defaultAge
+    @State private var heightCM: Int = AppConstants.ProfileDefaults.defaultHeightCM
     @State private var weightKG: Double = AppConstants.ProfileDefaults.defaultWeightKG
     @State private var activityLevel: ActivityLevel = .light
     @State private var isSaving = false
@@ -15,14 +20,27 @@ struct OnboardingProfileView: View {
 
     private let totalSteps = 4
 
+    // 预计算，避免每次渲染重新生成 341 个元素的数组
+    private static let weightOptions: [Double] = Array(stride(
+        from: AppConstants.ProfileDefaults.minWeightKG,
+        through: AppConstants.ProfileDefaults.maxWeightKG,
+        by: 0.5
+    ))
+
     private var previewProfile: UserProfile {
         UserProfile(
+            displayName: normalizedDisplayName,
             gender: gender,
-            age: Int(age),
-            heightCM: Int(heightCM),
+            age: age,
+            heightCM: heightCM,
             weightKG: weightKG,
             activityLevel: activityLevel
         )
+    }
+
+    private var normalizedDisplayName: String {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "LevelIt 用户" : trimmed
     }
 
     var body: some View {
@@ -30,20 +48,29 @@ struct OnboardingProfileView: View {
             // 进度条
             progressBar
 
-            // 内容
-            TabView(selection: $step) {
-                genderStep.tag(0)
-                bodyStep.tag(1)
-                activityStep.tag(2)
-                summaryStep.tag(3)
+            // 内容：只渲染当前步骤，避免 TabView 同时创建所有子视图（含滚轮选择器）
+            ZStack {
+                switch step {
+                case 0: genderStep.transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
+                case 1: bodyStep.transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
+                case 2: activityStep.transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
+                default: summaryStep.transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
+                }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
             .animation(.easeInOut(duration: 0.3), value: step)
 
             // 底部按钮
             bottomButtons
         }
         .background(Color(.systemBackground))
+        .onAppear {
+            if identifier.isEmpty {
+                identifier = initialIdentifier
+            }
+            if password.isEmpty {
+                password = initialPassword
+            }
+        }
     }
 
     // MARK: - 进度条
@@ -77,6 +104,22 @@ struct OnboardingProfileView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+
+            TextField("昵称", text: $displayName)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .padding(.horizontal, DS.Spacing.xl)
+
+            VStack(spacing: DS.Spacing.md) {
+                TextField("手机号或邮箱", text: $identifier)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .textFieldStyle(.roundedBorder)
+
+                SecureField("密码（至少 6 位）", text: $password)
+                    .textFieldStyle(.roundedBorder)
+            }
+            .padding(.horizontal, DS.Spacing.xl)
 
             HStack(spacing: DS.Spacing.lg) {
                 genderCard(.male, icon: "figure.stand", label: "男")
@@ -114,75 +157,71 @@ struct OnboardingProfileView: View {
     // MARK: - Step 1: 身体数据
 
     private var bodyStep: some View {
-        VStack(spacing: DS.Spacing.xl) {
-            Spacer()
+        VStack(spacing: 0) {
+            Spacer(minLength: 24)
 
             Text("身体数据")
                 .font(.title.weight(.bold))
+                .padding(.bottom, DS.Spacing.xs)
+            Text("用于计算你的基础代谢率")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
 
-            VStack(spacing: DS.Spacing.lg) {
-                // 年龄
-                VStack(spacing: DS.Spacing.sm) {
-                    HStack {
-                        Text("年龄")
-                            .font(.headline)
-                        Spacer()
-                        Text("\(Int(age)) 岁")
-                            .font(.system(.title3, design: .rounded).weight(.bold))
-                            .foregroundStyle(DS.Colors.accent)
+            Spacer(minLength: 24)
+
+            HStack(spacing: DS.Spacing.md) {
+                metricWheelCard(label: "年龄", unit: "岁") {
+                    Picker("年龄", selection: $age) {
+                        ForEach(AppConstants.ProfileDefaults.minAge...AppConstants.ProfileDefaults.maxAge, id: \.self) { v in
+                            Text("\(v)").tag(v)
+                        }
                     }
-                    Slider(
-                        value: $age,
-                        in: Double(AppConstants.ProfileDefaults.minAge)...Double(AppConstants.ProfileDefaults.maxAge),
-                        step: 1
-                    )
-                    .tint(DS.Colors.accent)
+                    .pickerStyle(.wheel)
                 }
 
-                // 身高
-                VStack(spacing: DS.Spacing.sm) {
-                    HStack {
-                        Text("身高")
-                            .font(.headline)
-                        Spacer()
-                        Text("\(Int(heightCM)) cm")
-                            .font(.system(.title3, design: .rounded).weight(.bold))
-                            .foregroundStyle(DS.Colors.accent)
+                metricWheelCard(label: "身高", unit: "cm") {
+                    Picker("身高", selection: $heightCM) {
+                        ForEach(AppConstants.ProfileDefaults.minHeightCM...AppConstants.ProfileDefaults.maxHeightCM, id: \.self) { v in
+                            Text("\(v)").tag(v)
+                        }
                     }
-                    Slider(
-                        value: $heightCM,
-                        in: Double(AppConstants.ProfileDefaults.minHeightCM)...Double(AppConstants.ProfileDefaults.maxHeightCM),
-                        step: 1
-                    )
-                    .tint(DS.Colors.accent)
+                    .pickerStyle(.wheel)
                 }
 
-                // 体重
-                VStack(spacing: DS.Spacing.sm) {
-                    HStack {
-                        Text("体重")
-                            .font(.headline)
-                        Spacer()
-                        Text(String(format: "%.1f kg", weightKG))
-                            .font(.system(.title3, design: .rounded).weight(.bold))
-                            .foregroundStyle(DS.Colors.accent)
+                metricWheelCard(label: "体重", unit: "kg") {
+                    Picker("体重", selection: $weightKG) {
+                        ForEach(Self.weightOptions, id: \.self) { v in
+                            Text(v.truncatingRemainder(dividingBy: 1) == 0
+                                 ? "\(Int(v))"
+                                 : String(format: "%.1f", v)
+                            ).tag(v)
+                        }
                     }
-                    Slider(
-                        value: $weightKG,
-                        in: AppConstants.ProfileDefaults.minWeightKG...AppConstants.ProfileDefaults.maxWeightKG,
-                        step: 0.5
-                    )
-                    .tint(DS.Colors.accent)
+                    .pickerStyle(.wheel)
                 }
             }
-            .padding()
-            .background(DS.Colors.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
             .padding(.horizontal)
 
             Spacer()
-            Spacer()
         }
+    }
+
+    private func metricWheelCard<Content: View>(label: String, unit: String, @ViewBuilder picker: () -> Content) -> some View {
+        VStack(spacing: DS.Spacing.xs) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            picker()
+                .frame(height: 140)
+                .clipped()
+            Text(unit)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, DS.Spacing.sm)
+        .background(DS.Colors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
     }
 
     // MARK: - Step 2: 活动水平
@@ -302,9 +341,10 @@ struct OnboardingProfileView: View {
 
             // 档案汇总
             VStack(spacing: DS.Spacing.sm) {
+                summaryRow("昵称", value: normalizedDisplayName)
                 summaryRow("性别", value: gender.displayName)
-                summaryRow("年龄", value: "\(Int(age)) 岁")
-                summaryRow("身高", value: "\(Int(heightCM)) cm")
+                summaryRow("年龄", value: "\(age) 岁")
+                summaryRow("身高", value: "\(heightCM) cm")
                 summaryRow("体重", value: String(format: "%.1f kg", weightKG))
                 summaryRow("活动水平", value: activityLevel.displayName)
             }
@@ -354,6 +394,11 @@ struct OnboardingProfileView: View {
 
             Button {
                 if step < totalSteps - 1 {
+                    if step == 0, !accountInputIsValid {
+                        cloudError = "请填写手机号或邮箱，并设置至少 6 位密码"
+                        return
+                    }
+                    cloudError = nil
                     withAnimation { step += 1 }
                 } else {
                     saveProfile()
@@ -381,26 +426,39 @@ struct OnboardingProfileView: View {
     // MARK: - 保存
 
     private func saveProfile() {
+        guard accountInputIsValid else {
+            cloudError = "请填写手机号或邮箱，并设置至少 6 位密码"
+            return
+        }
+
         isSaving = true
         cloudError = nil
 
         let profile = previewProfile
 
-        // 1. 立即保存到本地
-        UserProfileStore.save(profile)
-
-        // 2. 异步保存到 CloudKit (不阻塞)
         Task {
             do {
-                try await CloudKitService.save(profile)
+                let result = try await AliyunAuthService.register(
+                    identifier: identifier,
+                    password: password,
+                    profile: profile
+                )
+                await MainActor.run {
+                    AliyunAuthService.apply(result, identifier: identifier)
+                    isSaving = false
+                    onComplete()
+                }
             } catch {
-                // CloudKit 失败不阻塞注册流程，本地已保存
-                print("CloudKit save failed: \(error.localizedDescription)")
-            }
-            await MainActor.run {
-                isSaving = false
-                onComplete()
+                await MainActor.run {
+                    cloudError = error.localizedDescription
+                    isSaving = false
+                }
             }
         }
+    }
+
+    private var accountInputIsValid: Bool {
+        !identifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        password.count >= 6
     }
 }
