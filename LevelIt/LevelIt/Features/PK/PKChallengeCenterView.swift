@@ -21,10 +21,12 @@ struct PKChallengeCenterView: View {
     // 认领挑战
     @State private var showClaimSheet = false
     @State private var claimCode = ""
-    @State private var claimChallengerName = ""
-    @State private var claimType: PKChallengeType = .firstToSettle
-    @State private var claimTargetCalories: Double = 300
-    @State private var claimDuration: Double = 1
+    @State private var claimMyName = ""
+
+    // 同步状态
+    @State private var isSyncing = false
+    @State private var syncError: String?
+    @State private var showSyncError = false
 
     private var profile: UserProfile {
         UserProfileStore.current ?? UserProfile(
@@ -75,13 +77,30 @@ struct PKChallengeCenterView: View {
         }
         .navigationTitle("朋友 PK")
         .navigationBarTitleDisplayMode(.inline)
-        .task { checkExpiredChallenges() }
+        .toolbar {
+            if isSyncing {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    ProgressView().scaleEffect(0.75)
+                }
+            }
+        }
+        .task {
+            checkExpiredChallenges()
+            await syncActiveChallenges()
+        }
+        .refreshable { await syncActiveChallenges() }
+        .onReceive(NotificationCenter.default.publisher(for: .pkDeviceTokenUpdated)) { notification in
+            guard let token = notification.object as? String else { return }
+            Task { await registerDeviceTokenForActive(token) }
+        }
         .onAppear {
+            claimMyName = profile.displayName
             if todayPendingKcal > 0 { targetCalories = Double(todayPendingKcal) }
         }
         .sheet(item: $editingChallenge) { challenge in
             PKChallengeEditView(challenge: challenge) { updated in
                 try? modelContext.save()
+                Task { try? await PKSyncService.updateChallenge(updated) }
             }
         }
         .sheet(isPresented: $showClaimSheet) {
@@ -93,10 +112,16 @@ struct PKChallengeCenterView: View {
                 try? modelContext.save()
                 withdrawTarget = nil
                 if latestInvite?.id == challenge.id { latestInvite = nil }
+                Task { try? await PKSyncService.cancelChallenge(challenge) }
             }
             Button("取消", role: .cancel) { withdrawTarget = nil }
         } message: { challenge in
             Text("撤回后对手将无法通过邀请码认领「\(challenge.title)」。")
+        }
+        .alert("同步失败", isPresented: $showSyncError) {
+            Button("好的", role: .cancel) { }
+        } message: {
+            Text(syncError ?? "未知错误")
         }
     }
 
@@ -306,32 +331,60 @@ struct PKChallengeCenterView: View {
                 statusBadge(challenge.status)
             }
 
-            // 进行中：显示进度条
+            // 进行中：显示进度条（我方 + 对手）
             if challenge.status == .accepted {
-                let progress = liveProgress(for: challenge)
-                VStack(spacing: 4) {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.secondary.opacity(0.15))
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(DS.Colors.accent)
-                                .frame(width: geo.size.width * progress)
-                                .animation(.easeOut, value: progress)
+                let myPct  = liveProgress(for: challenge)
+                let oppPct = challenge.opponentProgressRatio
+                VStack(spacing: 6) {
+                    // 我方
+                    VStack(spacing: 3) {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(Color.secondary.opacity(0.15))
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(DS.Colors.accent)
+                                    .frame(width: geo.size.width * myPct)
+                                    .animation(.easeOut, value: myPct)
+                            }
                         }
-                    }
-                    .frame(height: 6)
-
-                    HStack {
-                        Text("\(Int(progress * 100))% 完成")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        if challenge.type != .streakSprint {
-                            let burned = Int(progress * Double(challenge.targetCalories))
-                            Text("\(burned) / \(challenge.targetCalories) kcal")
+                        .frame(height: 6)
+                        HStack {
+                            Text("我 \(Int(myPct * 100))%")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
+                            Spacer()
+                            if challenge.type != .streakSprint {
+                                Text("\(Int(myPct * Double(challenge.targetCalories))) / \(challenge.targetCalories) kcal")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    // 对手（serverId 存在才显示，否则无服务端数据）
+                    if challenge.serverId != nil {
+                        VStack(spacing: 3) {
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(Color.secondary.opacity(0.15))
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(.orange)
+                                        .frame(width: geo.size.width * oppPct)
+                                        .animation(.easeOut, value: oppPct)
+                                }
+                            }
+                            .frame(height: 6)
+                            HStack {
+                                Text("对手 \(Int(oppPct * 100))%")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                if challenge.type != .streakSprint {
+                                    Text("\(Int(oppPct * Double(challenge.targetCalories))) kcal")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }
                 }
@@ -382,6 +435,7 @@ struct PKChallengeCenterView: View {
             Button(role: .destructive) {
                 challenge.status = .cancelled
                 try? modelContext.save()
+                Task { try? await PKSyncService.cancelChallenge(challenge) }
             } label: {
                 Label("认输放弃", systemImage: "flag.slash")
             }
@@ -389,6 +443,7 @@ struct PKChallengeCenterView: View {
 
         if challenge.status.isTerminal {
             Button(role: .destructive) {
+                Task { try? await PKSyncService.deleteChallenge(challenge) }
                 modelContext.delete(challenge)
                 try? modelContext.save()
             } label: {
@@ -408,6 +463,7 @@ struct PKChallengeCenterView: View {
         }
         if challenge.status.isTerminal {
             Button(role: .destructive) {
+                Task { try? await PKSyncService.deleteChallenge(challenge) }
                 modelContext.delete(challenge)
                 try? modelContext.save()
             } label: {
@@ -440,30 +496,12 @@ struct PKChallengeCenterView: View {
                     TextField("邀请码（如 ABCD-XYZ123）", text: $claimCode)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
-                    TextField("对方昵称（可选）", text: $claimChallengerName)
+                    TextField("我的昵称", text: $claimMyName)
                         .textInputAutocapitalization(.words)
                 } header: {
                     Text("邀请信息")
                 } footer: {
-                    Text("邀请码可在朋友分享的消息里找到，格式为 XXXX-YYYYYY。")
-                }
-
-                Section("挑战类型") {
-                    Picker("类型", selection: $claimType) {
-                        ForEach(PKChallengeType.allCases, id: \.self) { t in
-                            Label(t.displayName, systemImage: t.iconName).tag(t)
-                        }
-                    }
-                }
-
-                if claimType == .streakSprint {
-                    Section("目标天数") {
-                        sliderRow(title: "天数", value: $claimDuration, range: 1...14, step: 1, display: "\(Int(claimDuration)) 天")
-                    }
-                } else {
-                    Section("目标消耗") {
-                        sliderRow(title: "目标", value: $claimTargetCalories, range: 50...1200, step: 10, display: "\(Int(claimTargetCalories)) kcal")
-                    }
+                    Text("邀请码可在朋友分享的消息里找到，格式为 XXXX-YYYYYY。认领成功后挑战详情会自动同步。")
                 }
             }
             .navigationTitle("认领挑战")
@@ -476,9 +514,9 @@ struct PKChallengeCenterView: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("认领") { claimChallenge() }
+                    Button("认领") { Task { await claimChallenge() } }
                         .fontWeight(.semibold)
-                        .disabled(claimCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(claimCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSyncing)
                 }
             }
         }
@@ -570,40 +608,87 @@ struct PKChallengeCenterView: View {
         try? modelContext.save()
         latestInvite = challenge
         opponentName = ""
+
+        // 上传服务端（fire-and-forget，失败不影响本地功能）
+        Task {
+            do {
+                let serverId = try await PKSyncService.createChallenge(challenge)
+                challenge.serverId = serverId
+                try? modelContext.save()
+            } catch {
+                // 无网络时静默忽略，下次同步时会重试
+            }
+        }
     }
 
-    private func claimChallenge() {
+    @MainActor
+    private func claimChallenge() async {
         let code = claimCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let myName = claimMyName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !code.isEmpty else { return }
+        isSyncing = true
 
-        let challenger = claimChallengerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = claimType == .streakSprint
-            ? "\(Int(claimDuration)) 天连续磨平"
-            : "燃烧 \(Int(claimTargetCalories)) kcal"
+        do {
+            let challenge = try await PKSyncService.claimChallenge(
+                inviteCode: code,
+                opponentName: myName.isEmpty ? profile.displayName : myName,
+                opponentCode: profile.inviteCode
+            )
+            modelContext.insert(challenge)
+            try? modelContext.save()
+            showClaimSheet = false
+            resetClaimForm()
+        } catch PKSyncService.PKSyncError.notLoggedIn {
+            syncError = "请先登录账号才能认领挑战"
+            showSyncError = true
+        } catch PKSyncService.PKSyncError.serverError(let code, let msg) {
+            syncError = code == 404 ? "邀请码无效或已被认领" : msg
+            showSyncError = true
+        } catch {
+            syncError = error.localizedDescription
+            showSyncError = true
+        }
 
-        let challenge = PKChallenge(
-            type: claimType,
-            title: title,
-            challengerName: challenger.isEmpty ? "对手" : challenger,
-            challengerCode: code,
-            opponentName: profile.displayName,
-            targetCalories: Int(claimTargetCalories),
-            durationDays: Int(claimDuration),
-            status: .accepted,
-            isChallenger: false
-        )
-        modelContext.insert(challenge)
-        try? modelContext.save()
-        showClaimSheet = false
-        resetClaimForm()
+        isSyncing = false
     }
 
     private func resetClaimForm() {
         claimCode = ""
-        claimChallengerName = ""
-        claimType = .firstToSettle
-        claimTargetCalories = 300
-        claimDuration = 1
+        claimMyName = profile.displayName
+    }
+
+    /// 拉取所有进行中挑战的对手进度并推送我方进度
+    @MainActor
+    private func syncActiveChallenges() async {
+        guard !isSyncing, AuthSessionStore.isAuthenticated else { return }
+        isSyncing = true
+        defer { isSyncing = false }
+
+        let active = challenges.filter { $0.status == .accepted && $0.serverId != nil }
+        await withTaskGroup(of: Void.self) { group in
+            for challenge in active {
+                group.addTask {
+                    do {
+                        let newOppProgress = try await PKSyncService.pushProgress(challenge)
+                        await MainActor.run {
+                            challenge.opponentProgress = newOppProgress
+                        }
+                    } catch { }
+                }
+            }
+        }
+        try? modelContext.save()
+    }
+
+    /// 将 APNs device token 注册到当前所有有 serverId 的挑战
+    @MainActor
+    private func registerDeviceTokenForActive(_ token: String) async {
+        let active = challenges.filter { $0.serverId != nil && !$0.status.isTerminal }
+        await withTaskGroup(of: Void.self) { group in
+            for challenge in active {
+                group.addTask { try? await PKSyncService.registerDeviceToken(token, for: challenge) }
+            }
+        }
     }
 
     /// 把自然过期的 invited 挑战标记为 expired

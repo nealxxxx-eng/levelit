@@ -64,6 +64,8 @@ public final class PKChallenge {
     public var targetCalories: Int
     public var durationDays: Int
     public var linkedTaskId: String?
+    public var serverId: String?      // 服务端分配的 UUID，nil = 未同步
+    public var opponentProgress: Int  // 对手这侧进度（Phase 2 同步）
     public var createdAt: Date
     public var expiresAt: Date        // 邀请过期时间，默认 48h
     public var acceptedAt: Date?
@@ -85,7 +87,8 @@ public final class PKChallenge {
         status: PKChallengeStatus = .invited,
         note: String? = nil,
         isChallenger: Bool = true,
-        expiresInHours: Double = 48
+        expiresInHours: Double = 48,
+        serverId: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -97,6 +100,8 @@ public final class PKChallenge {
         self.targetCalories = max(1, targetCalories)
         self.durationDays = max(1, durationDays)
         self.linkedTaskId = linkedTaskId
+        self.serverId = serverId
+        self.opponentProgress = 0
         self.createdAt = Date()
         self.expiresAt = Date().addingTimeInterval(expiresInHours * 3600)
         self.acceptedAt = nil
@@ -127,9 +132,15 @@ public final class PKChallenge {
         max(0, Int(expiresAt.timeIntervalSince(Date()) / 3600))
     }
 
-    /// 进度百分比（0.0 ~ 1.0）
+    /// 我方进度百分比（0.0 ~ 1.0）
     public var progressRatio: Double {
         guard targetCalories > 0 else { return 0 }
         return min(1.0, Double(myProgress) / Double(targetCalories))
+    }
+
+    /// 对手进度百分比（0.0 ~ 1.0）
+    public var opponentProgressRatio: Double {
+        guard targetCalories > 0 else { return 0 }
+        return min(1.0, Double(opponentProgress) / Double(targetCalories))
     }
 }

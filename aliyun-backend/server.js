@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import http from "node:http";
+import { handlePKRoutes } from "./api/pk.js";
+import { sendPushNotification } from "./api/apns.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const DB_FILE = process.env.LEVELIT_DB_FILE || "./levelit-users.json";
@@ -245,6 +247,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/auth/me") return handleMe(req, res);
     if (req.method === "PUT" && url.pathname === "/api/auth/profile") return handleProfileUpdate(req, res);
     if (req.method === "GET" && url.pathname === "/health") return json(res, 200, { ok: true });
+
+    // PK 挑战接口 — 所有 /api/pk/* 路由都需要 Bearer token
+    if (url.pathname.startsWith("/api/pk/")) {
+      const claims = verifyToken(bearerToken(req));
+      if (!claims?.sub) return json(res, 401, { error: "unauthorized" });
+      return handlePKRoutes(req, res, url, claims.sub, sendPushNotification);
+    }
+
     json(res, 404, { error: "not found" });
   } catch (error) {
     json(res, 500, { error: error.message || "internal server error" });

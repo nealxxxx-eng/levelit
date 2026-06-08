@@ -22,10 +22,11 @@ echo "    指纹已写入 ~/.ssh/known_hosts"
 SECRET="$(openssl rand -hex 32)"
 echo "==> 已生成 AUTH_SECRET"
 
-# ── 上传源文件（只上传 server.js 和 package.json，service 文件远端生成）
+# ── 上传源文件（server.js、package.json 以及 api/ 目录）
 echo "==> 上传文件到 $SERVER:$REMOTE_DIR ..."
-ssh "root@$SERVER" "mkdir -p $REMOTE_DIR"
+ssh "root@$SERVER" "mkdir -p $REMOTE_DIR/api"
 scp "$SCRIPT_DIR/server.js" "$SCRIPT_DIR/package.json" "root@$SERVER:$REMOTE_DIR/"
+scp "$SCRIPT_DIR/api/pk.js" "$SCRIPT_DIR/api/apns.js" "root@$SERVER:$REMOTE_DIR/api/"
 
 # ── 远程配置
 echo "==> 配置服务器..."
@@ -37,6 +38,7 @@ mkdir -p /etc/levelit
 cat > "$ENV_FILE" << EOF
 LEVELIT_AUTH_SECRET=$SECRET
 LEVELIT_DB_FILE=$DB_DIR/users.json
+LEVELIT_PK_DB_FILE=$DB_DIR/pk.json
 NODE_ENV=production
 EOF
 chmod 600 "$ENV_FILE"
