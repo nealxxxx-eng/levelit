@@ -39,6 +39,7 @@ cat > "$ENV_FILE" << EOF
 LEVELIT_AUTH_SECRET=$SECRET
 LEVELIT_DB_FILE=$DB_DIR/users.json
 LEVELIT_PK_DB_FILE=$DB_DIR/pk.json
+PORT=3001
 NODE_ENV=production
 EOF
 chmod 600 "$ENV_FILE"
@@ -97,7 +98,7 @@ if [ -z "\$NGINX_CONF" ]; then
     echo "    新建 nginx 配置: \$NGINX_CONF"
 fi
 
-# 7. 写入 /api/auth/ 代理块（幂等）
+# 7. 写入 /api/auth/ 与 /api/pk/ 代理块（幂等）
 if grep -q "api/auth" "\$NGINX_CONF" 2>/dev/null; then
     echo "    ✓ Nginx 已有 /api/auth/ 配置，跳过"
 else
@@ -129,6 +130,36 @@ PYEOF
     }
 fi
 
+if grep -q "api/pk" "\$NGINX_CONF" 2>/dev/null; then
+    echo "    ✓ Nginx 已有 /api/pk/ 配置，跳过"
+else
+    python3 - "\$NGINX_CONF" << 'PYEOF'
+import sys
+path = sys.argv[1]
+txt = open(path).read()
+block = """
+    location /api/pk/ {
+        proxy_pass         http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header   Host            \$host;
+        proxy_set_header   X-Real-IP       \$remote_addr;
+        proxy_read_timeout 35s;
+    }
+"""
+idx = txt.rfind('}')
+if idx == -1:
+    txt += "\nserver {\n" + block + "\n}\n"
+else:
+    txt = txt[:idx] + block + txt[idx:]
+open(path, 'w').write(txt)
+print("    ✓ Nginx /api/pk/ 配置已更新:", path)
+PYEOF
+    nginx -t && systemctl reload nginx && echo "    ✓ Nginx reload 成功" || {
+        echo "    ✗ Nginx 配置有误，请手动检查 \$NGINX_CONF"
+        exit 1
+    }
+fi
+
 # 8. 验证
 echo ""
 echo "==> 部署完成！验证中..."
@@ -140,6 +171,13 @@ if [ "\$RESULT" = "201" ] || [ "\$RESULT" = "409" ]; then
     echo "    ✓ /api/auth/register 响应正常 (HTTP \$RESULT)"
 else
     echo "    ✗ 验证失败，HTTP \$RESULT（可能 nginx 还需要手动检查）"
+fi
+
+PK_RESULT=\$(curl -s -o /dev/null -w "%{http_code}" http://localhost/api/pk/challenges)
+if [ "\$PK_RESULT" = "401" ]; then
+    echo "    ✓ /api/pk/challenges 认证保护正常 (HTTP \$PK_RESULT)"
+else
+    echo "    ⚠ /api/pk/challenges 返回 HTTP \$PK_RESULT，请确认 Nginx /api/pk/ 代理"
 fi
 ENDSSH
 
