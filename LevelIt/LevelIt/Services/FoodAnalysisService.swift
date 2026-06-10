@@ -49,6 +49,10 @@ enum FoodAnalysisService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // #2：AI 端点需鉴权，附带登录 token，防止接口被匿名刷量
+        if let token = AuthSessionStore.current?.token {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         request.timeoutInterval = timeoutSeconds
 
         let body = try JSONSerialization.data(withJSONObject: ["image": base64])
@@ -69,6 +73,10 @@ enum FoodAnalysisService {
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AnalysisError.serverError("Invalid response")
+        }
+
+        if httpResponse.statusCode == 401 {
+            throw AnalysisError.serverError("登录状态已失效，请重新登录后再试")
         }
 
         guard httpResponse.statusCode == 200 else {

@@ -49,6 +49,10 @@ enum DailyEnergyEstimateService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // #2：AI 端点需鉴权，附带登录 token，防止接口被匿名刷量
+        if let token = AuthSessionStore.current?.token {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         request.timeoutInterval = timeoutSeconds
         request.httpBody = try JSONEncoder().encode(EstimateRequest(
             gender: profile.gender.rawValue,
@@ -80,6 +84,10 @@ enum DailyEnergyEstimateService {
 
         if httpResponse.statusCode == 404 {
             throw EstimateError.serverError("服务端尚未部署 /api/estimate-daily-energy 接口，请稍后重试")
+        }
+
+        if httpResponse.statusCode == 401 {
+            throw EstimateError.serverError("登录状态已失效，请重新登录后再试")
         }
 
         guard httpResponse.statusCode == 200 else {
