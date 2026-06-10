@@ -59,7 +59,9 @@ async function readBody(req) {
   });
 }
 
-// 只暴露给客户端的字段（不含 deviceToken）
+// 只暴露给客户端的字段。
+// 不含 deviceToken；也不含内部 challengerId/opponentId（服务端用户 UUID），
+// 避免把内部标识泄露给挑战的另一方。当事人身份由 token 决定，无需返回。
 function publicChallenge(c) {
   return {
     id:                  c.id,
@@ -67,11 +69,9 @@ function publicChallenge(c) {
     type:                c.type,
     status:              c.status,
     title:               c.title,
-    challengerId:        c.challengerId,
     challengerName:      c.challengerName,
     challengerCode:      c.challengerCode,
     challengerProgress:  c.challengerProgress,
-    opponentId:          c.opponentId,
     opponentName:        c.opponentName,
     opponentCode:        c.opponentCode,
     opponentProgress:    c.opponentProgress,
@@ -135,6 +135,11 @@ async function handleCreate(req, res, userId) {
   if (!type || !title || !challengerName || !challengerCode || !targetCalories) {
     return json(res, 400, { error: "type, title, challengerName, challengerCode, targetCalories required" });
   }
+  // #10：拒绝非数字 targetCalories（"abc" 能绕过上面的 !targetCalories，导致存成 NaN）
+  const targetNum = Number(targetCalories);
+  if (!Number.isFinite(targetNum) || targetNum <= 0) {
+    return json(res, 400, { error: "targetCalories must be a positive number" });
+  }
 
   await withPKLock(async () => {
     const db  = await readDB();
@@ -158,7 +163,7 @@ async function handleCreate(req, res, userId) {
       opponentCode:        null,
       opponentProgress:    0,
       opponentDeviceToken: null,
-      targetCalories:      Math.max(1, Number(targetCalories)),
+      targetCalories:      Math.max(1, Math.round(targetNum)),
       durationDays:        Math.max(1, Number(durationDays) || 1),
       expiresAt:           new Date(Date.now() + ttl * 3600 * 1000).toISOString(),
       createdAt:           now,
@@ -211,8 +216,12 @@ async function handleUpdate(req, res, id, userId) {
 
     if (c.status !== "invited") return json(res, 409, { error: "cannot edit after accepted" });
     if (body.title)          c.title          = body.title;
-    if (body.targetCalories) c.targetCalories = Math.max(1, Number(body.targetCalories));
-    if (body.durationDays)   c.durationDays   = Math.max(1, Number(body.durationDays));
+    if (body.targetCalories !== undefined) {
+      const t = Number(body.targetCalories);
+      if (!Number.isFinite(t) || t <= 0) return json(res, 400, { error: "targetCalories must be a positive number" });
+      c.targetCalories = Math.max(1, Math.round(t));
+    }
+    if (body.durationDays)   c.durationDays   = Math.max(1, Number(body.durationDays) || 1);
     if (body.expiresAt)      c.expiresAt      = body.expiresAt;
     if (body.note !== undefined) c.note       = body.note || null;
 
@@ -274,10 +283,19 @@ async function handleClaim(req, res, userId, sendPush) {
   });
 }
 
+// #5：进度防作弊常数。
+// 进度由客户端上报，服务端无可信来源完全核实；以下为「提高作弊门槛」的硬化，
+// 而非密码学级保证。真正杜绝需服务端依据可信 HealthKit 数据记账。
+const MAX_KCAL_PER_SEC = 1.0;   // 60 kcal/min —— 远超任何可持续真实消耗，真实用户绝不会触顶
+const PROGRESS_BURST_BUFFER = 100; // 允许的瞬时缓冲，保证小幅正常更新永不误伤
+
 // ── 更新进度
 async function handleUpdateProgress(req, res, id, userId, sendPush) {
   const body     = await readBody(req);
-  const progress = Math.max(0, Number(body.progress) || 0);
+  const reported = Number(body.progress);
+  if (!Number.isFinite(reported) || reported < 0) {
+    return json(res, 400, { error: "progress must be a non-negative number" });
+  }
 
   await withPKLock(async () => {
     const db = await readDB();
@@ -289,8 +307,25 @@ async function handleUpdateProgress(req, res, id, userId, sendPush) {
     const isOpponent   = c.opponentId   === userId;
     if (!isChallenger && !isOpponent) return json(res, 403, { error: "forbidden" });
 
-    if (isChallenger) c.challengerProgress = progress;
-    else              c.opponentProgress   = progress;
+    const now      = Date.now();
+    const curKey   = isChallenger ? "challengerProgress"   : "opponentProgress";
+    const tsKey    = isChallenger ? "challengerProgressAt" : "opponentProgressAt";
+    const current  = c[curKey] || 0;
+    const lastAt   = c[tsKey] ? new Date(c[tsKey]).getTime()
+                              : new Date(c.acceptedAt || c.createdAt).getTime();
+
+    // 1) 单调不回退：忽略比当前还低的上报
+    let next = Math.max(current, reported);
+    // 2) 封顶到目标值：存超过目标无意义
+    next = Math.min(next, c.targetCalories);
+    // 3) 按真实时间限速：本次增量不得超过 已过秒数 × 上限速率 + 缓冲
+    const elapsedSec = Math.max(0, (now - lastAt) / 1000);
+    const maxDelta   = elapsedSec * MAX_KCAL_PER_SEC + PROGRESS_BURST_BUFFER;
+    next = Math.min(next, current + maxDelta);
+    next = Math.round(next);
+
+    c[curKey] = next;
+    c[tsKey]  = new Date(now).toISOString();
 
     // 检查是否完成
     if (c.challengerProgress >= c.targetCalories || c.opponentProgress >= c.targetCalories) {
@@ -318,6 +353,11 @@ async function handleRegisterDeviceToken(req, res, id, userId) {
   const body        = await readBody(req);
   const deviceToken = String(body.deviceToken || "").trim();
   if (!deviceToken) return json(res, 400, { error: "deviceToken required" });
+  // #6：APNs device token 必须是 64 位十六进制。未校验会被拼进 apns.js 的
+  // 请求路径 `/3/device/${deviceToken}`，特殊字符可污染发往 Apple 的请求。
+  if (!/^[0-9a-fA-F]{64}$/.test(deviceToken)) {
+    return json(res, 400, { error: "invalid device token format" });
+  }
 
   await withPKLock(async () => {
     const db = await readDB();

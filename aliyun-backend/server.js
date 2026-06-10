@@ -163,7 +163,9 @@ async function handleRegister(req, res) {
   await withDBLock(async () => {
     const db = await readDB();
     if (db.users.some(user => user.identifier === identifier)) {
-      json(res, 409, { error: "account already exists" });
+      // #7：中性措辞,不直接确认"该账号已存在",降低账号枚举价值。
+      // 注:HTTP 409 本身仍可区分,彻底防枚举需引入验证码/邮箱验证流程。
+      json(res, 409, { error: "无法使用该账号注册，若你已注册请直接登录" });
       return;
     }
 

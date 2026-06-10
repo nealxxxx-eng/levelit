@@ -18,9 +18,8 @@ echo "==> 获取服务器主机指纹..."
 ssh-keyscan -H "$SERVER" >> ~/.ssh/known_hosts 2>/dev/null
 echo "    指纹已写入 ~/.ssh/known_hosts"
 
-# ── 生成随机 secret（本地完成）
-SECRET="$(openssl rand -hex 32)"
-echo "==> 已生成 AUTH_SECRET"
+# ── secret 在远端按需生成：已存在则复用，避免每次部署轮换密钥导致全员被登出
+#    （#8）
 
 # ── 上传源文件（server.js、package.json 以及 api/ 目录）
 echo "==> 上传文件到 $SERVER:$REMOTE_DIR ..."
@@ -35,8 +34,16 @@ set -euo pipefail
 
 # 1. 写 env 文件
 mkdir -p /etc/levelit
+# #8：复用已有 secret，没有才新生成。否则每次部署都会让所有 JWT 失效、用户被登出。
+if [ -f "$ENV_FILE" ] && grep -q '^LEVELIT_AUTH_SECRET=' "$ENV_FILE"; then
+    SECRET=\$(grep '^LEVELIT_AUTH_SECRET=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+    echo "    复用已有 AUTH_SECRET"
+else
+    SECRET=\$(openssl rand -hex 32)
+    echo "    生成新的 AUTH_SECRET"
+fi
 cat > "$ENV_FILE" << EOF
-LEVELIT_AUTH_SECRET=$SECRET
+LEVELIT_AUTH_SECRET=\$SECRET
 LEVELIT_DB_FILE=$DB_DIR/users.json
 LEVELIT_PK_DB_FILE=$DB_DIR/pk.json
 NODE_ENV=production

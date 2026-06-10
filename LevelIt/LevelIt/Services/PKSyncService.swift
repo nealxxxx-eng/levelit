@@ -32,11 +32,10 @@ enum PKSyncService {
         let type: String
         let status: String
         let title: String
-        let challengerId: String
+        // challengerId/opponentId 已不由服务端返回（#9，避免泄露内部 userId）
         let challengerName: String
         let challengerCode: String
         let challengerProgress: Int
-        let opponentId: String?
         let opponentName: String?
         let opponentCode: String?
         let opponentProgress: Int

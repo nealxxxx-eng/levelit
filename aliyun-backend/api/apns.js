@@ -60,6 +60,11 @@ function generateAPNsJWT() {
  * @param {object} [opts.data]  — 附加数据（透传给 App）
  */
 export async function sendPushNotification(deviceToken, { title, body, data = {} }) {
+  // 纵深防御:token 会拼进请求路径,只接受合法十六进制,杜绝路径注入
+  if (typeof deviceToken !== "string" || !/^[0-9a-fA-F]{64}$/.test(deviceToken)) {
+    console.warn("APNs: 非法 device token,已跳过推送");
+    return;
+  }
   const jwt = generateAPNsJWT();
   if (!jwt) return; // 静默跳过
 
