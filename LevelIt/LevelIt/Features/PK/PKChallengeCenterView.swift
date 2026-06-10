@@ -329,6 +329,18 @@ struct PKChallengeCenterView: View {
                 Spacer()
 
                 statusBadge(challenge.status)
+
+                if hasActions(for: challenge) {
+                    Menu {
+                        contextMenuItems(for: challenge)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                }
             }
 
             // 进行中：显示进度条（我方 + 对手）
@@ -406,12 +418,14 @@ struct PKChallengeCenterView: View {
         .padding(.horizontal)
         .padding(.vertical, DS.Spacing.sm)
         .contextMenu { contextMenuItems(for: challenge) }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            trailingSwipeActions(for: challenge)
-        }
-        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-            leadingSwipeActions(for: challenge)
-        }
+    }
+
+    /// 该挑战是否有可执行的管理操作（决定是否显示行内 ••• 菜单）
+    private func hasActions(for challenge: PKChallenge) -> Bool {
+        if challenge.status == .invited && challenge.isChallenger { return true }
+        if challenge.status == .accepted { return true }
+        if challenge.status.isTerminal { return true }
+        return false
     }
 
     // MARK: - Context Menu
@@ -449,41 +463,6 @@ struct PKChallengeCenterView: View {
             } label: {
                 Label("删除记录", systemImage: "trash")
             }
-        }
-    }
-
-    // MARK: - Swipe Actions
-
-    @ViewBuilder
-    private func trailingSwipeActions(for challenge: PKChallenge) -> some View {
-        if challenge.status == .invited && challenge.isChallenger {
-            Button(role: .destructive) { withdrawTarget = challenge } label: {
-                Label("撤回", systemImage: "arrow.uturn.backward")
-            }
-        }
-        if challenge.status.isTerminal {
-            Button(role: .destructive) {
-                Task { try? await PKSyncService.deleteChallenge(challenge) }
-                modelContext.delete(challenge)
-                try? modelContext.save()
-            } label: {
-                Label("删除", systemImage: "trash")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func leadingSwipeActions(for challenge: PKChallenge) -> some View {
-        if challenge.status == .invited && challenge.isChallenger {
-            Button { editingChallenge = challenge } label: {
-                Label("编辑", systemImage: "pencil")
-            }
-            .tint(DS.Colors.accent)
-
-            ShareLink(item: challenge.inviteText) {
-                Label("分享", systemImage: "square.and.arrow.up")
-            }
-            .tint(.green)
         }
     }
 
