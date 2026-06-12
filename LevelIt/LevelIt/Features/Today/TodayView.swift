@@ -6,6 +6,7 @@ struct TodayView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \DebtTask.createdAt, order: .reverse) private var allTasks: [DebtTask]
     @Query(sort: \MealIntake.takenAt, order: .reverse) private var allIntakes: [MealIntake]
+    @Query(sort: \PKChallenge.createdAt, order: .reverse) private var allChallenges: [PKChallenge]
 
     @State private var intakeToDelete: MealIntake?
 
@@ -32,6 +33,10 @@ struct TodayView: View {
 
     private var todayDurationMinutes: Int {
         todayTasks.reduce(0) { $0 + $1.durationSeconds } / 60
+    }
+
+    private var activePKCount: Int {
+        allChallenges.filter { $0.status == .invited || $0.status == .accepted }.count
     }
 
     private var todaySettled: Int {
@@ -501,44 +506,51 @@ struct TodayView: View {
     // MARK: - 朋友 PK
 
     private var pkSection: some View {
-        VStack(spacing: DS.Spacing.md) {
-            HStack {
-                Image(systemName: "person.2.fill")
-                    .font(.title2)
-                    .foregroundStyle(DS.Colors.accent)
-                Text("朋友 PK")
-                    .font(.headline)
-                Spacer()
-                Text("即将上线")
-                    .font(.caption)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(DS.Colors.accent.opacity(0.15))
-                    .foregroundStyle(DS.Colors.accent)
-                    .clipShape(Capsule())
-            }
+        NavigationLink(value: AppRoute.pkChallengeCenter) {
+            VStack(spacing: DS.Spacing.md) {
+                HStack {
+                    Image(systemName: "person.2.fill")
+                        .font(.title2)
+                        .foregroundStyle(DS.Colors.accent)
+                    Text("朋友 PK")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Text(activePKCount > 0 ? "\(activePKCount) 个进行中" : "发起挑战")
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(DS.Colors.accent.opacity(0.15))
+                        .foregroundStyle(DS.Colors.accent)
+                        .clipShape(Capsule())
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
 
-            VStack(spacing: DS.Spacing.sm) {
-                pkFeatureRow(
-                    icon: "flame.fill",
-                    title: "对赌模式",
-                    desc: "和朋友同时接单，谁先结清谁赢"
-                )
-                pkFeatureRow(
-                    icon: "trophy.fill",
-                    title: "排行榜",
-                    desc: "比比谁更自律，周榜 / 月榜"
-                )
-                pkFeatureRow(
-                    icon: "bell.badge.fill",
-                    title: "互相监督",
-                    desc: "朋友吃了高热量？提醒 TA 去磨平"
-                )
+                VStack(spacing: DS.Spacing.sm) {
+                    pkFeatureRow(
+                        icon: "flame.fill",
+                        title: "对赌模式",
+                        desc: "和朋友同时接单，谁先结清谁赢"
+                    )
+                    pkFeatureRow(
+                        icon: "trophy.fill",
+                        title: "挑战记录",
+                        desc: "保存邀请、目标和进行中的 PK"
+                    )
+                    pkFeatureRow(
+                        icon: "square.and.arrow.up",
+                        title: "分享邀请",
+                        desc: "生成邀请码，通过微信或系统分享发给朋友"
+                    )
+                }
             }
+            .padding()
+            .background(DS.Colors.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
         }
-        .padding()
-        .background(DS.Colors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
+        .buttonStyle(.plain)
     }
 
     private func pkFeatureRow(icon: String, title: String, desc: String) -> some View {

@@ -24,6 +24,7 @@ enum AppRoute: Hashable {
     case foodWall
     case foodDetail(MealIntake)
     case workoutImport
+    case pkChallengeCenter
     case stats
     case today
     case settings

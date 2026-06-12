@@ -65,6 +65,8 @@ public enum ActivityLevel: String, Codable, CaseIterable, Sendable {
 // MARK: - 用户档案
 
 public struct UserProfile: Codable, Sendable, Equatable {
+    public var displayName: String
+    public var inviteCode: String
     public var gender: Gender
     public var age: Int
     public var heightCM: Int
@@ -78,6 +80,8 @@ public struct UserProfile: Codable, Sendable, Equatable {
     public var updatedAt: Date
 
     public init(
+        displayName: String = "LevelIt 用户",
+        inviteCode: String = UserProfile.makeInviteCode(),
         gender: Gender,
         age: Int,
         heightCM: Int,
@@ -87,6 +91,8 @@ public struct UserProfile: Codable, Sendable, Equatable {
         aiEstimateSummary: String? = nil,
         aiEstimateUpdatedAt: Date? = nil
     ) {
+        self.displayName = displayName
+        self.inviteCode = inviteCode
         self.gender = gender
         self.age = age
         self.heightCM = heightCM
@@ -97,6 +103,53 @@ public struct UserProfile: Codable, Sendable, Equatable {
         self.aiEstimateUpdatedAt = aiEstimateUpdatedAt
         self.createdAt = Date()
         self.updatedAt = Date()
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case displayName
+        case inviteCode
+        case gender
+        case age
+        case heightCM
+        case weightKG
+        case activityLevel
+        case aiEstimatedTDEE
+        case aiEstimateSummary
+        case aiEstimateUpdatedAt
+        case createdAt
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? "LevelIt 用户"
+        self.inviteCode = try container.decodeIfPresent(String.self, forKey: .inviteCode) ?? UserProfile.makeInviteCode()
+        self.gender = try container.decode(Gender.self, forKey: .gender)
+        self.age = try container.decode(Int.self, forKey: .age)
+        self.heightCM = try container.decode(Int.self, forKey: .heightCM)
+        self.weightKG = try container.decode(Double.self, forKey: .weightKG)
+        self.activityLevel = try container.decode(ActivityLevel.self, forKey: .activityLevel)
+        self.aiEstimatedTDEE = try container.decodeIfPresent(Int.self, forKey: .aiEstimatedTDEE)
+        self.aiEstimateSummary = try container.decodeIfPresent(String.self, forKey: .aiEstimateSummary)
+        self.aiEstimateUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .aiEstimateUpdatedAt)
+        self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? self.createdAt
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(displayName, forKey: .displayName)
+        try container.encode(inviteCode, forKey: .inviteCode)
+        try container.encode(gender, forKey: .gender)
+        try container.encode(age, forKey: .age)
+        try container.encode(heightCM, forKey: .heightCM)
+        try container.encode(weightKG, forKey: .weightKG)
+        try container.encode(activityLevel, forKey: .activityLevel)
+        try container.encodeIfPresent(aiEstimatedTDEE, forKey: .aiEstimatedTDEE)
+        try container.encodeIfPresent(aiEstimateSummary, forKey: .aiEstimateSummary)
+        try container.encodeIfPresent(aiEstimateUpdatedAt, forKey: .aiEstimateUpdatedAt)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
     }
 
     /// 基础代谢率 (Mifflin-St Jeor 公式, kcal/天)
@@ -126,6 +179,11 @@ public struct UserProfile: Codable, Sendable, Equatable {
             return aiEstimatedTDEE
         }
         return formulaTDEE
+    }
+
+    public static func makeInviteCode() -> String {
+        let alphabet = Array("23456789ABCDEFGHJKLMNPQRSTUVWXYZ")
+        return String((0..<6).compactMap { _ in alphabet.randomElement() })
     }
 }
 

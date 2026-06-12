@@ -161,6 +161,7 @@ struct StatsView: View {
 
                 calorieRingCard
                 keyMetrics
+                insightCard
                 dailyBarChart
                 anomalyActionButton
                 balanceTrendChart
@@ -348,6 +349,88 @@ struct StatsView: View {
         .padding()
         .background(DS.Colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
+    }
+
+    // MARK: - 数据洞察
+
+    private var insightCard: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.md) {
+            HStack {
+                Label("数据洞察", systemImage: "sparkles")
+                    .font(.headline)
+                Spacer()
+                Text(period.rawValue)
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DS.Colors.accent.opacity(0.12))
+                    .foregroundStyle(DS.Colors.accent)
+                    .clipShape(Capsule())
+            }
+
+            Text(insightTitle)
+                .font(.title3.weight(.bold))
+
+            Text(insightDetail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 0) {
+                metricItem(value: "\(averageIntake)", label: "日均摄入")
+                Divider().frame(height: 34)
+                metricItem(value: "\(averageBurned)", label: "日均运动")
+                Divider().frame(height: 34)
+                metricItem(value: bestBalanceLabel, label: "最佳平衡日")
+            }
+            .padding(.top, DS.Spacing.xs)
+        }
+        .padding()
+        .background(DS.Colors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
+    }
+
+    private var averageIntake: Int {
+        let days = max(1, dailyData.count)
+        return totalIntake / days
+    }
+
+    private var averageBurned: Int {
+        let days = max(1, dailyData.count)
+        return totalBurned / days
+    }
+
+    private var bestBalanceLabel: String {
+        guard let entry = dailyData.max(by: { ($0.burned - $0.intake) < ($1.burned - $1.intake) }) else {
+            return "--"
+        }
+        return entry.label
+    }
+
+    private var insightTitle: String {
+        if intakesInPeriod.isEmpty {
+            return "还没有形成可分析的摄入记录"
+        }
+        if completionRate >= 80 {
+            return "磨平完成率很稳，继续保持节奏"
+        }
+        if totalConsumed >= totalIntake {
+            return "热量账面已经打平"
+        }
+        return "本周期还有 \(max(0, totalIntake - totalConsumed)) kcal 缺口"
+    }
+
+    private var insightDetail: String {
+        if intakesInPeriod.isEmpty {
+            return "拍照或手动记录几次食物后，这里会自动总结摄入、运动消耗和完成率。"
+        }
+        if completionRate >= 80 {
+            return "已结清 \(settledCount)/\(taskCount) 个任务，日均运动 \(averageBurned) kcal。可以用朋友 PK 把这个节奏变成轻量约束。"
+        }
+        if totalConsumed >= totalIntake {
+            return "本周期已记录摄入 \(totalIntake) kcal，运动与自然消耗合计 \(totalConsumed) kcal，当前净平衡为 +\(totalConsumed - totalIntake) kcal。"
+        }
+        return "建议优先处理今日待磨平任务，或导入 HealthKit 中未抵扣的运动；先补 \(min(300, max(0, totalIntake - totalConsumed))) kcal 会更容易起步。"
     }
 
     private func metricItem(value: String, label: String) -> some View {
