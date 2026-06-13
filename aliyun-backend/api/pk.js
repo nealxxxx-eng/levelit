@@ -7,6 +7,7 @@
  */
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
+import { findUserByUsername, findUserById } from "./users-store.js";
 
 const PK_DB_FILE = process.env.LEVELIT_PK_DB_FILE || "./levelit-pk.json";
 
@@ -62,18 +63,31 @@ async function readBody(req) {
 // 只暴露给客户端的字段。
 // 不含 deviceToken；也不含内部 challengerId/opponentId（服务端用户 UUID），
 // 避免把内部标识泄露给挑战的另一方。当事人身份由 token 决定，无需返回。
-function publicChallenge(c) {
+function publicChallenge(c, viewerId = null) {
+  // 相对观察者的角色与待办，不暴露内部 userId
+  const myRole = viewerId && c.challengerId === viewerId ? "challenger"
+               : viewerId && c.opponentId === viewerId ? "opponent"
+               : null;
+  // 定向挑战（指定了好友）等待该好友接受
+  const awaitingMyAcceptance = viewerId != null && c.status === "invited" &&
+                               c.opponentId === viewerId;
   return {
     id:                  c.id,
     inviteCode:          c.inviteCode,
     type:                c.type,
     status:              c.status,
     title:               c.title,
+    visibility:          c.visibility || "private",
+    isDirected:          c.opponentId != null && c.status === "invited",
+    myRole,
+    awaitingMyAcceptance,
     challengerName:      c.challengerName,
     challengerCode:      c.challengerCode,
+    challengerUsername:  c.challengerUsername || null,
     challengerProgress:  c.challengerProgress,
     opponentName:        c.opponentName,
     opponentCode:        c.opponentCode,
+    opponentUsername:    c.opponentUsername || null,
     opponentProgress:    c.opponentProgress,
     targetCalories:      c.targetCalories,
     durationDays:        c.durationDays,
@@ -114,6 +128,11 @@ export async function handlePKRoutes(req, res, url, userId, sendPush) {
     return json(res, 405, { error: "method not allowed" });
   }
 
+  if (subPath === "accept") {
+    if (req.method === "PUT") return handleAcceptDirected(req, res, id, userId, sendPush);
+    return json(res, 405, { error: "method not allowed" });
+  }
+
   if (subPath === "device-token") {
     if (req.method === "PUT") return handleRegisterDeviceToken(req, res, id, userId);
     return json(res, 405, { error: "method not allowed" });
@@ -130,7 +149,8 @@ export async function handlePKRoutes(req, res, url, userId, sendPush) {
 async function handleCreate(req, res, userId) {
   const body = await readBody(req);
   const { type, title, challengerName, challengerCode, opponentName,
-          targetCalories, durationDays, note, expiresInHours } = body;
+          targetCalories, durationDays, note, expiresInHours,
+          opponentUsername, visibility } = body;
 
   if (!type || !title || !challengerName || !challengerCode || !targetCalories) {
     return json(res, 400, { error: "type, title, challengerName, challengerCode, targetCalories required" });
@@ -140,6 +160,16 @@ async function handleCreate(req, res, userId) {
   if (!Number.isFinite(targetNum) || targetNum <= 0) {
     return json(res, 400, { error: "targetCalories must be a positive number" });
   }
+
+  // 定向好友挑战：解析 opponentUsername → 该好友
+  let directedOpponent = null;
+  if (opponentUsername) {
+    directedOpponent = await findUserByUsername(opponentUsername);
+    if (!directedOpponent) return json(res, 404, { error: "对手用户名不存在" });
+    if (directedOpponent.id === userId) return json(res, 400, { error: "不能挑战自己" });
+  }
+  const me = await findUserById(userId);
+  const vis = visibility === "public" ? "public" : "private";
 
   await withPKLock(async () => {
     const db  = await readDB();
@@ -152,15 +182,19 @@ async function handleCreate(req, res, userId) {
       inviteCode:          `${String(challengerCode).toUpperCase()}-${id.slice(0, 6).toUpperCase()}`,
       type,
       status:              "invited",
+      visibility:          vis,
       title,
       challengerId:        userId,
       challengerName,
       challengerCode:      String(challengerCode).toUpperCase(),
+      challengerUsername:  me?.username || null,
       challengerProgress:  0,
       challengerDeviceToken: null,
-      opponentId:          null,
-      opponentName:        opponentName || null,
+      // 定向挑战：预置 opponentId，对方在列表里即可见、直接 accept；非定向为 null（走邀请码/广场认领）
+      opponentId:          directedOpponent ? directedOpponent.id : null,
+      opponentName:        directedOpponent ? (directedOpponent.profile?.displayName || directedOpponent.username) : (opponentName || null),
       opponentCode:        null,
+      opponentUsername:    directedOpponent ? directedOpponent.username : null,
       opponentProgress:    0,
       opponentDeviceToken: null,
       targetCalories:      Math.max(1, Math.round(targetNum)),
@@ -174,7 +208,7 @@ async function handleCreate(req, res, userId) {
 
     db.challenges.push(challenge);
     await writeDB(db);
-    json(res, 201, publicChallenge(challenge));
+    json(res, 201, publicChallenge(challenge, userId));
   });
 }
 
@@ -184,7 +218,7 @@ async function handleList(req, res, userId) {
   const mine = db.challenges.filter(
     (c) => c.challengerId === userId || c.opponentId === userId
   );
-  json(res, 200, mine.map(publicChallenge));
+  json(res, 200, mine.map((c) => publicChallenge(c, userId)));
 }
 
 // ── 获取单个挑战
@@ -194,7 +228,7 @@ async function handleGet(req, res, id, userId) {
   if (!c) return json(res, 404, { error: "not found" });
   if (c.challengerId !== userId && c.opponentId !== userId)
     return json(res, 403, { error: "forbidden" });
-  json(res, 200, publicChallenge(c));
+  json(res, 200, publicChallenge(c, userId));
 }
 
 // ── 编辑挑战（仅 invited 状态 + 发起方）
@@ -211,7 +245,7 @@ async function handleUpdate(req, res, id, userId) {
       if (c.status !== "invited") return json(res, 409, { error: "can only cancel invited challenges" });
       c.status = "cancelled";
       await writeDB(db);
-      return json(res, 200, publicChallenge(c));
+      return json(res, 200, publicChallenge(c, userId));
     }
 
     if (c.status !== "invited") return json(res, 409, { error: "cannot edit after accepted" });
@@ -226,7 +260,7 @@ async function handleUpdate(req, res, id, userId) {
     if (body.note !== undefined) c.note       = body.note || null;
 
     await writeDB(db);
-    json(res, 200, publicChallenge(c));
+    json(res, 200, publicChallenge(c, userId));
   });
 }
 
@@ -252,22 +286,29 @@ async function handleClaim(req, res, userId, sendPush) {
 
   if (!inviteCode) return json(res, 400, { error: "inviteCode required" });
 
+  const claimer = await findUserById(userId);
+
   await withPKLock(async () => {
     const db = await readDB();
     const c  = db.challenges.find((c) => c.inviteCode === inviteCode && c.status === "invited");
     if (!c) return json(res, 404, { error: "invite code not found or already claimed" });
     if (c.challengerId === userId) return json(res, 409, { error: "cannot claim your own challenge" });
+    // 定向挑战（已指定对手）不允许他人用邀请码抢领
+    if (c.opponentId && c.opponentId !== userId) {
+      return json(res, 409, { error: "该挑战已指定对手" });
+    }
     if (new Date(c.expiresAt) < new Date()) {
       c.status = "expired";
       await writeDB(db);
       return json(res, 410, { error: "invite has expired" });
     }
 
-    c.opponentId   = userId;
-    c.opponentName = opponentName;
-    c.opponentCode = opponentCode || null;
-    c.status       = "accepted";
-    c.acceptedAt   = new Date().toISOString();
+    c.opponentId       = userId;
+    c.opponentName     = opponentName;
+    c.opponentCode     = opponentCode || null;
+    c.opponentUsername = claimer?.username || null;
+    c.status           = "accepted";
+    c.acceptedAt       = new Date().toISOString();
     await writeDB(db);
 
     // 通知发起方
@@ -279,7 +320,38 @@ async function handleClaim(req, res, userId, sendPush) {
       }).catch(() => {});
     }
 
-    json(res, 200, publicChallenge(c));
+    json(res, 200, publicChallenge(c, userId));
+  });
+}
+
+// ── 接受定向挑战（被指定的好友直接接受，不需邀请码）
+async function handleAcceptDirected(req, res, id, userId, sendPush) {
+  const accepter = await findUserById(userId);
+  await withPKLock(async () => {
+    const db = await readDB();
+    const c  = db.challenges.find((c) => c.id === id);
+    if (!c) return json(res, 404, { error: "not found" });
+    if (c.status !== "invited") return json(res, 409, { error: "挑战已不可接受" });
+    if (c.opponentId !== userId) return json(res, 403, { error: "该挑战不是发给你的" });
+    if (new Date(c.expiresAt) < new Date()) {
+      c.status = "expired";
+      await writeDB(db);
+      return json(res, 410, { error: "挑战已过期" });
+    }
+
+    c.opponentName = accepter?.profile?.displayName || c.opponentName;
+    c.status       = "accepted";
+    c.acceptedAt   = new Date().toISOString();
+    await writeDB(db);
+
+    if (c.challengerDeviceToken) {
+      sendPush(c.challengerDeviceToken, {
+        title: "好友接受了挑战！",
+        body:  `${c.opponentName} 接受了你的挑战「${c.title}」`,
+        data:  { challengeId: c.id, type: "challenge_accepted" },
+      }).catch(() => {});
+    }
+    json(res, 200, publicChallenge(c, userId));
   });
 }
 
@@ -344,7 +416,7 @@ async function handleUpdateProgress(req, res, id, userId, sendPush) {
     }
 
     await writeDB(db);
-    json(res, 200, publicChallenge(c));
+    json(res, 200, publicChallenge(c, userId));
   });
 }
 

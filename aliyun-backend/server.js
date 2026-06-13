@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import http from "node:http";
 import { handlePKRoutes } from "./api/pk.js";
 import { sendPushNotification } from "./api/apns.js";
+import { handleSocialRoutes } from "./api/social.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const DB_FILE = process.env.LEVELIT_DB_FILE || "./levelit-users.json";
@@ -368,6 +369,13 @@ const server = http.createServer(async (req, res) => {
       const claims = verifyToken(bearerToken(req));
       if (!claims?.sub) return json(res, 401, { error: "unauthorized" });
       return handlePKRoutes(req, res, url, claims.sub, sendPushNotification);
+    }
+
+    // 好友接口 — /api/friends/* 需要 Bearer token
+    if (url.pathname === "/api/friends" || url.pathname.startsWith("/api/friends/")) {
+      const claims = verifyToken(bearerToken(req));
+      if (!claims?.sub) return json(res, 401, { error: "unauthorized" });
+      return handleSocialRoutes(req, res, url, claims.sub);
     }
 
     json(res, 404, { error: "not found" });
