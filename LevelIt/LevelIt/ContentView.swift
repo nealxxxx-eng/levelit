@@ -147,6 +147,15 @@ struct ContentView: View {
         case .pkChallengeCenter:
             PKChallengeCenterView()
 
+        case .friends:
+            FriendsView()
+
+        case .pkBoard:
+            PublicBoardView()
+
+        case .leaderboard:
+            LeaderboardView()
+
         case .stats:
             StatsView()
 

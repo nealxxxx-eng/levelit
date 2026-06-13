@@ -46,6 +46,34 @@ enum PKSyncService {
         let acceptedAt: String?
         let completedAt: String?
         let note: String?
+        // Phase 2/3 新增（可选，兼容老响应）
+        let visibility: String?
+        let isDirected: Bool?
+        let myRole: String?              // "challenger" | "opponent"
+        let awaitingMyAcceptance: Bool?
+        let challengerUsername: String?
+        let opponentUsername: String?
+    }
+
+    /// 服务端挑战的纯值快照，供视图层合并进本地 SwiftData（Sendable，不含 @Model）
+    struct RemoteChallenge: Sendable {
+        let serverId: String
+        let inviteCode: String
+        let type: String
+        let status: String
+        let title: String
+        let iAmChallenger: Bool
+        let awaitingMyAcceptance: Bool
+        let myProgress: Int
+        let opponentProgress: Int
+        let opponentName: String?
+        let challengerName: String
+        let challengerCode: String
+        let targetCalories: Int
+        let durationDays: Int
+        let note: String?
+        let acceptedAt: Date?
+        let completedAt: Date?
     }
 
     private struct CreateRequest: Encodable {
@@ -58,6 +86,8 @@ enum PKSyncService {
         let durationDays: Int
         let note: String?
         let expiresInHours: Double
+        let opponentUsername: String?
+        let visibility: String?
     }
 
     private struct UpdateRequest: Encodable {
@@ -125,7 +155,12 @@ enum PKSyncService {
 
     /// 将本地新建的挑战上传服务端，返回服务端 id 和服务端生成的邀请码。
     /// 认领必须用服务端的 inviteCode（与本地占位码不同）。
-    static func createChallenge(_ challenge: PKChallenge) async throws -> (serverId: String, inviteCode: String) {
+    /// - opponentUsername: 非空则为定向好友挑战；visibility="public" 则发到广场。
+    static func createChallenge(
+        _ challenge: PKChallenge,
+        opponentUsername: String? = nil,
+        visibility: String? = nil
+    ) async throws -> (serverId: String, inviteCode: String) {
         let expiresInHours = challenge.expiresAt.timeIntervalSince(Date()) / 3600
         let body = CreateRequest(
             type: challenge.type.rawValue,
@@ -136,7 +171,9 @@ enum PKSyncService {
             targetCalories: challenge.targetCalories,
             durationDays: challenge.durationDays,
             note: challenge.note,
-            expiresInHours: max(1, expiresInHours)
+            expiresInHours: max(1, expiresInHours),
+            opponentUsername: opponentUsername,
+            visibility: visibility
         )
         let dto: ChallengeDTO = try await request(path: "/challenges", method: "POST", body: body)
         return (dto.id, dto.inviteCode)
@@ -218,9 +255,33 @@ enum PKSyncService {
         return try await request(path: "/challenges/\(serverId)", method: "GET")
     }
 
-    /// 拉取我参与的全部挑战（内部同步用）。
-    private static func fetchAllChallenges() async throws -> [ChallengeDTO] {
-        return try await request(path: "/challenges", method: "GET")
+    /// 拉取我参与的全部挑战（含别人发给我的定向挑战、我发的被认领的挑战），
+    /// 映射为纯值快照供视图层合并进本地 SwiftData。
+    static func fetchAllChallenges() async throws -> [RemoteChallenge] {
+        let dtos: [ChallengeDTO] = try await request(path: "/challenges", method: "GET")
+        let iso = ISO8601DateFormatter()
+        return dtos.map { d in
+            let iAmChallenger = (d.myRole ?? "challenger") == "challenger"
+            return RemoteChallenge(
+                serverId: d.id,
+                inviteCode: d.inviteCode,
+                type: d.type,
+                status: d.status,
+                title: d.title,
+                iAmChallenger: iAmChallenger,
+                awaitingMyAcceptance: d.awaitingMyAcceptance ?? false,
+                myProgress: iAmChallenger ? d.challengerProgress : d.opponentProgress,
+                opponentProgress: iAmChallenger ? d.opponentProgress : d.challengerProgress,
+                opponentName: iAmChallenger ? d.opponentName : d.challengerName,
+                challengerName: d.challengerName,
+                challengerCode: d.challengerCode,
+                targetCalories: d.targetCalories,
+                durationDays: d.durationDays,
+                note: d.note,
+                acceptedAt: d.acceptedAt.flatMap { iso.date(from: $0) },
+                completedAt: d.completedAt.flatMap { iso.date(from: $0) }
+            )
+        }
     }
 
     /// 注册 APNs device token，绑定到指定挑战（收纯 serverId，不碰 @Model）。

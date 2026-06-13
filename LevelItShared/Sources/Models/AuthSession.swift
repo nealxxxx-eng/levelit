@@ -5,17 +5,20 @@ public struct AuthSession: Codable, Sendable, Equatable {
     public var token: String
     public var userId: String
     public var identifier: String
+    public var username: String?
     public var createdAt: Date
 
     public init(
         token: String,
         userId: String,
         identifier: String,
+        username: String? = nil,
         createdAt: Date = Date()
     ) {
         self.token = token
         self.userId = userId
         self.identifier = identifier
+        self.username = username
         self.createdAt = createdAt
     }
 }

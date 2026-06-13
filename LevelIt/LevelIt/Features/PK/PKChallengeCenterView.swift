@@ -28,6 +28,9 @@ struct PKChallengeCenterView: View {
     @State private var syncError: String?
     @State private var showSyncError = false
 
+    // 发布到广场（公开挑战）
+    @State private var postToBoard = false
+
     private var profile: UserProfile {
         UserProfileStore.current ?? UserProfile(
             gender: .male,
@@ -54,6 +57,7 @@ struct PKChallengeCenterView: View {
         ScrollView {
             VStack(spacing: DS.Spacing.lg) {
                 accountCard
+                socialNavRow
                 createCard
                 claimCard
 
@@ -86,9 +90,13 @@ struct PKChallengeCenterView: View {
         }
         .task {
             checkExpiredChallenges()
+            await pullRemoteChallenges()
             await syncActiveChallenges()
         }
-        .refreshable { await syncActiveChallenges() }
+        .refreshable {
+            await pullRemoteChallenges()
+            await syncActiveChallenges()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .pkDeviceTokenUpdated)) { notification in
             guard let token = notification.object as? String else { return }
             Task { await registerDeviceTokenForActive(token) }
@@ -157,6 +165,29 @@ struct PKChallengeCenterView: View {
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
     }
 
+    // MARK: - 社交入口
+
+    private var socialNavRow: some View {
+        HStack(spacing: DS.Spacing.md) {
+            navTile(title: "好友", icon: "person.2.fill", route: .friends)
+            navTile(title: "广场", icon: "rectangle.stack.fill", route: .pkBoard)
+            navTile(title: "排行榜", icon: "trophy.fill", route: .leaderboard)
+        }
+    }
+
+    private func navTile(title: String, icon: String, route: AppRoute) -> some View {
+        NavigationLink(value: route) {
+            VStack(spacing: 6) {
+                Image(systemName: icon).font(.title3).foregroundStyle(DS.Colors.accent)
+                Text(title).font(.caption.weight(.medium)).foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
+            .background(DS.Colors.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - 发起挑战
 
     private var createCard: some View {
@@ -181,8 +212,16 @@ struct PKChallengeCenterView: View {
                 sliderRow(title: "目标消耗", value: $targetCalories, range: 50...1200, step: 10, display: "\(Int(targetCalories)) kcal")
             }
 
+            Toggle(isOn: $postToBoard) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("发布到广场").font(.subheadline.weight(.medium))
+                    Text("任何人都能在广场看到并认领").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .tint(DS.Colors.accent)
+
             Button { Task { await createInvite() } } label: {
-                Label(isSyncing ? "生成中…" : "生成邀请", systemImage: "paperplane.fill")
+                Label(isSyncing ? "生成中…" : (postToBoard ? "发布到广场" : "生成邀请"), systemImage: "paperplane.fill")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -415,6 +454,23 @@ struct PKChallengeCenterView: View {
                 }
                 .padding(.leading, 46)
             }
+
+            // 收到的定向挑战：接受按钮
+            if challenge.status == .invited && !challenge.isChallenger {
+                Button {
+                    Task { await acceptDirected(challenge) }
+                } label: {
+                    Label("接受挑战", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(DS.Colors.accent.opacity(0.14))
+                        .foregroundStyle(DS.Colors.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.md))
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 46)
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, DS.Spacing.sm)
@@ -592,13 +648,16 @@ struct PKChallengeCenterView: View {
         defer { isSyncing = false }
 
         do {
-            let result = try await PKSyncService.createChallenge(challenge)
+            let result = try await PKSyncService.createChallenge(
+                challenge, visibility: postToBoard ? "public" : nil
+            )
             challenge.serverId = result.serverId
             challenge.serverInviteCode = result.inviteCode
             modelContext.insert(challenge)
             try? modelContext.save()
             latestInvite = challenge
             opponentName = ""
+            postToBoard = false
         } catch PKSyncService.PKSyncError.notLoggedIn {
             syncError = "请先登录账号才能发起挑战"
             showSyncError = true
@@ -642,6 +701,63 @@ struct PKChallengeCenterView: View {
     private func resetClaimForm() {
         claimCode = ""
         claimMyName = profile.displayName
+    }
+
+    /// 从服务端拉取我参与的全部挑战，合并进本地 SwiftData。
+    /// 这样别人发给我的定向挑战、我发的被认领的挑战，本地都能看到。
+    @MainActor
+    private func pullRemoteChallenges() async {
+        guard AuthSessionStore.isAuthenticated else { return }
+        let remote: [PKSyncService.RemoteChallenge]
+        do { remote = try await PKSyncService.fetchAllChallenges() } catch { return }
+
+        for r in remote {
+            if let existing = challenges.first(where: { $0.serverId == r.serverId }) {
+                if let st = PKChallengeStatus(rawValue: r.status) { existing.status = st }
+                existing.opponentProgress = r.opponentProgress
+                existing.myProgress = max(existing.myProgress, r.myProgress)
+                if let on = r.opponentName { existing.opponentName = on }
+                existing.acceptedAt = r.acceptedAt
+                existing.completedAt = r.completedAt
+            } else {
+                guard let type = PKChallengeType(rawValue: r.type) else { continue }
+                let c = PKChallenge(
+                    type: type,
+                    title: r.title,
+                    challengerName: r.challengerName,
+                    challengerCode: r.challengerCode,
+                    opponentName: r.opponentName,
+                    targetCalories: r.targetCalories,
+                    durationDays: r.durationDays,
+                    status: PKChallengeStatus(rawValue: r.status) ?? .invited,
+                    note: r.note,
+                    isChallenger: r.iAmChallenger,
+                    serverId: r.serverId,
+                    serverInviteCode: r.inviteCode
+                )
+                c.opponentProgress = r.opponentProgress
+                c.myProgress = r.myProgress
+                c.acceptedAt = r.acceptedAt
+                c.completedAt = r.completedAt
+                modelContext.insert(c)
+            }
+        }
+        try? modelContext.save()
+    }
+
+    /// 接受别人发给我的定向挑战
+    @MainActor
+    private func acceptDirected(_ challenge: PKChallenge) async {
+        guard let serverId = challenge.serverId else { return }
+        do {
+            try await SocialService.acceptDirectedChallenge(serverId: serverId)
+            challenge.status = .accepted
+            challenge.acceptedAt = Date()
+            try? modelContext.save()
+        } catch {
+            syncError = (error as? LocalizedError)?.errorDescription ?? "接受失败"
+            showSyncError = true
+        }
     }
 
     /// 拉取所有进行中挑战的对手进度并推送我方进度。

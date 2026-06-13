@@ -8,6 +8,7 @@ enum AliyunAuthService {
     struct AuthResult: Decodable {
         let token: String
         let userId: String
+        let username: String?
         let profile: UserProfile
     }
 
@@ -98,9 +99,17 @@ enum AliyunAuthService {
         AuthSessionStore.save(AuthSession(
             token: result.token,
             userId: result.userId,
-            identifier: normalized(identifier)
+            identifier: normalized(identifier),
+            username: result.username
         ))
         UserProfileStore.save(result.profile)
+    }
+
+    /// 更新本地会话里的用户名（改名成功后调用）
+    static func updateStoredUsername(_ username: String) {
+        guard var session = AuthSessionStore.current else { return }
+        session.username = username
+        AuthSessionStore.save(session)
     }
 
     static func logout() {
