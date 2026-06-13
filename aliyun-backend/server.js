@@ -75,6 +75,31 @@ function normalizeIdentifier(identifier) {
   return String(identifier || "").trim().toLowerCase();
 }
 
+// ── 用户名（公开、唯一、可搜索的句柄）
+function normalizeUsername(username) {
+  return String(username || "").trim().toLowerCase();
+}
+
+// 3–20 位：小写字母、数字、下划线；必须以字母开头
+function isValidUsername(username) {
+  return /^[a-z][a-z0-9_]{2,19}$/.test(username);
+}
+
+// 生成一个不与现有用户冲突的默认用户名
+function generateUniqueUsername(db, seed) {
+  const base = (normalizeUsername(seed).replace(/[^a-z0-9_]/g, "") || "user")
+    .replace(/^[^a-z]+/, "user")
+    .slice(0, 14);
+  let candidate = base.length >= 3 ? base : `user_${base}`;
+  const taken = (name) => db.users.some(u => u.username === name);
+  if (!taken(candidate)) return candidate;
+  for (let i = 0; i < 10000; i++) {
+    const next = `${candidate}${Math.floor(1000 + Math.random() * 9000)}`.slice(0, 20);
+    if (!taken(next)) return next;
+  }
+  return `user_${crypto.randomUUID().slice(0, 8)}`;
+}
+
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
   const hash = crypto.pbkdf2Sync(String(password), salt, 120000, 32, "sha256").toString("hex");
   return `${salt}:${hash}`;
@@ -128,6 +153,7 @@ function publicUser(user) {
   return {
     userId: user.id,
     identifier: user.identifier,
+    username: user.username || null,
     profile: user.profile
   };
 }
@@ -160,6 +186,13 @@ async function handleRegister(req, res) {
     return;
   }
 
+  // 可选 username：提供则校验格式+查重，否则由昵称/identifier 派生唯一值
+  const requestedUsername = body.username ? normalizeUsername(body.username) : "";
+  if (requestedUsername && !isValidUsername(requestedUsername)) {
+    json(res, 400, { error: "用户名需 3–20 位，字母开头，仅含小写字母/数字/下划线" });
+    return;
+  }
+
   await withDBLock(async () => {
     const db = await readDB();
     if (db.users.some(user => user.identifier === identifier)) {
@@ -168,10 +201,18 @@ async function handleRegister(req, res) {
       json(res, 409, { error: "无法使用该账号注册，若你已注册请直接登录" });
       return;
     }
+    if (requestedUsername && db.users.some(u => u.username === requestedUsername)) {
+      json(res, 409, { error: "该用户名已被占用，请换一个" });
+      return;
+    }
+
+    const username = requestedUsername ||
+      generateUniqueUsername(db, profile?.displayName || identifier.split("@")[0]);
 
     const user = {
       id: crypto.randomUUID(),
       identifier,
+      username,
       passwordHash: hashPassword(password),
       profile,
       createdAt: new Date().toISOString(),
@@ -183,6 +224,7 @@ async function handleRegister(req, res) {
     json(res, 201, {
       token: signToken(user.id),
       userId: user.id,
+      username: user.username,
       profile: user.profile
     });
   });
@@ -200,9 +242,23 @@ async function handleLogin(req, res) {
     return;
   }
 
+  // 老用户惰性补 username（无需独立迁移）
+  if (!user.username) {
+    await withDBLock(async () => {
+      const db2 = await readDB();
+      const u2 = db2.users.find(x => x.id === user.id);
+      if (u2 && !u2.username) {
+        u2.username = generateUniqueUsername(db2, u2.profile?.displayName || u2.identifier.split("@")[0]);
+        await writeDB(db2);
+        user.username = u2.username;
+      }
+    });
+  }
+
   json(res, 200, {
     token: signToken(user.id),
     userId: user.id,
+    username: user.username,
     profile: user.profile
   });
 }
@@ -210,7 +266,62 @@ async function handleLogin(req, res) {
 async function handleMe(req, res) {
   const context = await requireUser(req, res);
   if (!context) return;
+  // 老用户惰性补 username
+  if (!context.user.username) {
+    await withDBLock(async () => {
+      const db2 = await readDB();
+      const u2 = db2.users.find(x => x.id === context.user.id);
+      if (u2 && !u2.username) {
+        u2.username = generateUniqueUsername(db2, u2.profile?.displayName || u2.identifier.split("@")[0]);
+        await writeDB(db2);
+        context.user.username = u2.username;
+      }
+    });
+  }
   json(res, 200, publicUser(context.user));
+}
+
+// ── 设置/修改用户名
+async function handleSetUsername(req, res) {
+  const body = await readBody(req);
+  const username = normalizeUsername(body.username);
+  if (!isValidUsername(username)) {
+    json(res, 400, { error: "用户名需 3–20 位，字母开头，仅含小写字母/数字/下划线" });
+    return;
+  }
+
+  const claims = verifyToken(bearerToken(req));
+  if (!claims?.sub) { json(res, 401, { error: "unauthorized" }); return; }
+
+  await withDBLock(async () => {
+    const db = await readDB();
+    const user = db.users.find(u => u.id === claims.sub);
+    if (!user) { json(res, 401, { error: "user not found" }); return; }
+    if (db.users.some(u => u.username === username && u.id !== user.id)) {
+      json(res, 409, { error: "该用户名已被占用，请换一个" });
+      return;
+    }
+    user.username = username;
+    user.updatedAt = new Date().toISOString();
+    await writeDB(db);
+    json(res, 200, publicUser(user));
+  });
+}
+
+// ── 按用户名搜索用户（前缀匹配，最多 20 条；只返回公开信息）
+async function handleUserSearch(req, res, url) {
+  const claims = verifyToken(bearerToken(req));
+  if (!claims?.sub) { json(res, 401, { error: "unauthorized" }); return; }
+
+  const q = normalizeUsername(url.searchParams.get("q") || "");
+  if (q.length < 2) { json(res, 200, { results: [] }); return; }
+
+  const db = await readDB();
+  const results = db.users
+    .filter(u => u.username && u.username.startsWith(q) && u.id !== claims.sub)
+    .slice(0, 20)
+    .map(u => ({ username: u.username, displayName: u.profile?.displayName || u.username }));
+  json(res, 200, { results });
 }
 
 async function handleProfileUpdate(req, res) {
@@ -248,6 +359,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/auth/login") return handleLogin(req, res);
     if (req.method === "GET" && url.pathname === "/api/auth/me") return handleMe(req, res);
     if (req.method === "PUT" && url.pathname === "/api/auth/profile") return handleProfileUpdate(req, res);
+    if (req.method === "PUT" && url.pathname === "/api/auth/username") return handleSetUsername(req, res);
+    if (req.method === "GET" && url.pathname === "/api/users/search") return handleUserSearch(req, res, url);
     if (req.method === "GET" && url.pathname === "/health") return json(res, 200, { ok: true });
 
     // PK 挑战接口 — 所有 /api/pk/* 路由都需要 Bearer token
