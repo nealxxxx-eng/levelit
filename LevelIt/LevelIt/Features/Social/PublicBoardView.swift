@@ -58,14 +58,23 @@ struct PublicBoardView: View {
                     Text("@\(u)").font(.caption2.monospaced()).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button {
-                    Task { await claim(item) }
-                } label: {
-                    if claimingId == item.id { ProgressView().controlSize(.small) }
-                    else { Text(alreadyClaimed ? "已认领" : "认领").font(.caption.weight(.semibold)) }
+                if item.isMine {
+                    Text("我发布的")
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.12))
+                        .foregroundStyle(.secondary)
+                        .clipShape(Capsule())
+                } else {
+                    Button {
+                        Task { await claim(item) }
+                    } label: {
+                        if claimingId == item.id { ProgressView().controlSize(.small) }
+                        else { Text(alreadyClaimed ? "已认领" : "认领").font(.caption.weight(.semibold)) }
+                    }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                    .disabled(alreadyClaimed || claimingId != nil)
                 }
-                .buttonStyle(.borderedProminent).controlSize(.small)
-                .disabled(alreadyClaimed || claimingId != nil)
             }
             if let note = item.note, !note.isEmpty {
                 Text(note).font(.caption).foregroundStyle(.secondary)

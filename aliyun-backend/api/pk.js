@@ -252,8 +252,8 @@ async function handleBoard(req, res, url, userId) {
       c.visibility === "public" &&
       c.status === "invited" &&
       !c.opponentId &&                          // 未被认领、未定向
-      c.challengerId !== userId &&              // 不显示自己发的
       new Date(c.expiresAt).getTime() > now     // 未过期
+      // 含自己发布的（客户端标注「我发布的」并禁用认领），方便发布者确认上榜
     )
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 

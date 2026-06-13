@@ -90,12 +90,10 @@ struct PKChallengeCenterView: View {
         }
         .task {
             checkExpiredChallenges()
-            await pullRemoteChallenges()
-            await syncActiveChallenges()
+            await runSync()
         }
         .refreshable {
-            await pullRemoteChallenges()
-            await syncActiveChallenges()
+            await runSync()
         }
         .onReceive(NotificationCenter.default.publisher(for: .pkDeviceTokenUpdated)) { notification in
             guard let token = notification.object as? String else { return }
@@ -703,6 +701,16 @@ struct PKChallengeCenterView: View {
         claimMyName = profile.displayName
     }
 
+    /// 单一入口：防止 .task / .refreshable / .onReceive 并发重入同步。
+    @MainActor
+    private func runSync() async {
+        guard !isSyncing else { return }
+        isSyncing = true
+        defer { isSyncing = false }
+        await pullRemoteChallenges()
+        await syncActiveChallenges()
+    }
+
     /// 从服务端拉取我参与的全部挑战，合并进本地 SwiftData。
     /// 这样别人发给我的定向挑战、我发的被认领的挑战，本地都能看到。
     @MainActor
@@ -765,10 +773,8 @@ struct PKChallengeCenterView: View {
     /// 访问 SwiftData @Model 对象——后者会导致真机 hang/crash。
     @MainActor
     private func syncActiveChallenges() async {
-        guard !isSyncing, AuthSessionStore.isAuthenticated else { return }
-        isSyncing = true
-        defer { isSyncing = false }
-
+        guard AuthSessionStore.isAuthenticated else { return }
+        // isSyncing 由 runSync 统一管理（这里不再单独置位，避免被自身守卫挡掉）
         let active = challenges.filter { $0.status == .accepted && $0.serverId != nil }
         for challenge in active {
             // 在主 actor 上先取出纯值

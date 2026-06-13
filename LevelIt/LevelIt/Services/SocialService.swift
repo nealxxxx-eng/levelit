@@ -65,6 +65,9 @@ enum SocialService {
         let durationDays: Int
         let expiresAt: String
         let note: String?
+        let myRole: String?
+
+        var isMine: Bool { myRole == "challenger" }
     }
 
     private struct BoardResponse: Codable { let total: Int; let items: [BoardChallenge] }
