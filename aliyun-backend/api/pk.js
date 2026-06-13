@@ -7,9 +7,12 @@
  */
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
-import { findUserByUsername, findUserById } from "./users-store.js";
+import { findUserByUsername, findUserById, getPublicUserMap } from "./users-store.js";
 
 const PK_DB_FILE = process.env.LEVELIT_PK_DB_FILE || "./levelit-pk.json";
+
+// 防滥用：每人最多同时挂这么多条「公开、待认领」的发榜挑战
+const MAX_OPEN_PUBLIC_PER_USER = 5;
 
 // ── 存储锁
 let pkWriteLock = Promise.resolve();
@@ -110,6 +113,11 @@ export async function handlePKRoutes(req, res, url, userId, sendPush) {
     return handleClaim(req, res, userId, sendPush);
   }
 
+  // GET /api/pk/board — 公开发榜广场
+  if (req.method === "GET" && url.pathname === "/api/pk/board") {
+    return handleBoard(req, res, url, userId);
+  }
+
   const challengesBase = segments[3] === "challenges";
   if (!challengesBase) return json(res, 404, { error: "not found" });
 
@@ -173,6 +181,17 @@ async function handleCreate(req, res, userId) {
 
   await withPKLock(async () => {
     const db  = await readDB();
+
+    // 防滥用：公开挑战数量上限
+    if (vis === "public") {
+      const openPublic = db.challenges.filter(
+        (c) => c.challengerId === userId && c.visibility === "public" && c.status === "invited"
+      ).length;
+      if (openPublic >= MAX_OPEN_PUBLIC_PER_USER) {
+        return json(res, 429, { error: `最多同时发布 ${MAX_OPEN_PUBLIC_PER_USER} 条公开挑战，请先撤回一些` });
+      }
+    }
+
     const now = new Date().toISOString();
     const id  = crypto.randomUUID();
     const ttl = Math.max(1, Math.min(168, Number(expiresInHours) || 48)); // 1h ~ 7d
@@ -219,6 +238,27 @@ async function handleList(req, res, userId) {
     (c) => c.challengerId === userId || c.opponentId === userId
   );
   json(res, 200, mine.map((c) => publicChallenge(c, userId)));
+}
+
+// ── 发榜广场：公开、待认领、未过期、非自己发起、未定向给特定人
+async function handleBoard(req, res, url, userId) {
+  const limit  = Math.max(1, Math.min(50, Number(url.searchParams.get("limit")) || 20));
+  const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+  const now = Date.now();
+
+  const db = await readDB();
+  const open = db.challenges
+    .filter((c) =>
+      c.visibility === "public" &&
+      c.status === "invited" &&
+      !c.opponentId &&                          // 未被认领、未定向
+      c.challengerId !== userId &&              // 不显示自己发的
+      new Date(c.expiresAt).getTime() > now     // 未过期
+    )
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const page = open.slice(offset, offset + limit).map((c) => publicChallenge(c, userId));
+  json(res, 200, { total: open.length, items: page });
 }
 
 // ── 获取单个挑战
@@ -443,4 +483,55 @@ async function handleRegisterDeviceToken(req, res, id, userId) {
     await writeDB(db);
     json(res, 200, { ok: true });
   });
+}
+
+// ── 排行榜：基于 PK 数据聚合（胜场 + 挑战内累计消耗）
+//    胜场 = 完成的挑战中自己这侧达标；消耗 = 自己各挑战进度之和（服务端已存）。
+export async function handleLeaderboard(req, res, url, userId) {
+  const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit")) || 20));
+  const db = await readDB();
+  const userMap = await getPublicUserMap();
+
+  const stats = new Map(); // id -> { wins, burned, completed }
+  const bump = (id, key, n = 1) => {
+    if (!id) return;
+    const s = stats.get(id) || { wins: 0, burned: 0, completed: 0 };
+    s[key] += n;
+    stats.set(id, s);
+  };
+
+  for (const c of db.challenges) {
+    const target = c.targetCalories || 0;
+    bump(c.challengerId, "burned", c.challengerProgress || 0);
+    if (c.opponentId) bump(c.opponentId, "burned", c.opponentProgress || 0);
+    if (c.status === "completed") {
+      const challengerWon = target > 0 && (c.challengerProgress || 0) >= target;
+      const opponentWon   = target > 0 && (c.opponentProgress || 0) >= target;
+      if (challengerWon) bump(c.challengerId, "wins");
+      if (opponentWon)   bump(c.opponentId, "wins");
+      bump(c.challengerId, "completed");
+      if (c.opponentId) bump(c.opponentId, "completed");
+    }
+  }
+
+  const myInfo = userMap.get(userId);
+  const items = [...stats.entries()]
+    .map(([id, s]) => {
+      const info = userMap.get(id);
+      return info ? { username: info.username, displayName: info.displayName, ...s } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.wins - a.wins || b.burned - a.burned)
+    .slice(0, limit)
+    .map((row, i) => ({
+      rank: i + 1,
+      username: row.username,
+      displayName: row.displayName,
+      wins: row.wins,
+      burned: row.burned,
+      completed: row.completed,
+      isMe: myInfo ? row.username === myInfo.username : false,
+    }));
+
+  json(res, 200, { items });
 }

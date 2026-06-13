@@ -31,6 +31,16 @@ export async function findUserById(id) {
   return db.users.find(u => u.id === id) || null;
 }
 
+/** id → 公开信息 的映射，供排行榜等批量解析（一次读盘） */
+export async function getPublicUserMap() {
+  const db = await readUsers();
+  const map = new Map();
+  for (const u of db.users) {
+    map.set(u.id, { username: u.username || null, displayName: u.profile?.displayName || u.username || "用户" });
+  }
+  return map;
+}
+
 /** 只暴露公开信息（用户名 + 昵称），绝不含内部 id / identifier */
 export function publicUserInfo(u) {
   if (!u) return null;

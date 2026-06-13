@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import http from "node:http";
-import { handlePKRoutes } from "./api/pk.js";
+import { handlePKRoutes, handleLeaderboard } from "./api/pk.js";
 import { sendPushNotification } from "./api/apns.js";
 import { handleSocialRoutes } from "./api/social.js";
 
@@ -376,6 +376,13 @@ const server = http.createServer(async (req, res) => {
       const claims = verifyToken(bearerToken(req));
       if (!claims?.sub) return json(res, 401, { error: "unauthorized" });
       return handleSocialRoutes(req, res, url, claims.sub);
+    }
+
+    // 排行榜 — 需要 Bearer token
+    if (req.method === "GET" && url.pathname === "/api/leaderboard") {
+      const claims = verifyToken(bearerToken(req));
+      if (!claims?.sub) return json(res, 401, { error: "unauthorized" });
+      return handleLeaderboard(req, res, url, claims.sub);
     }
 
     json(res, 404, { error: "not found" });
