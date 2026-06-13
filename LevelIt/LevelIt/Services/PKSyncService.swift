@@ -201,14 +201,15 @@ enum PKSyncService {
     }
 
     /// 推送我方进度到服务端，返回更新后对手进度。
-    static func pushProgress(_ challenge: PKChallenge) async throws -> Int {
-        guard let serverId = challenge.serverId else { return challenge.opponentProgress }
+    /// 收纯值而非 @Model 对象——调用方须在主 actor 上取出字段，避免后台线程
+    /// 访问 SwiftData 模型导致 hang/crash。
+    static func pushProgress(serverId: String, isChallenger: Bool, myProgress: Int) async throws -> Int {
         let dto: ChallengeDTO = try await request(
             path: "/challenges/\(serverId)/progress",
             method: "PUT",
-            body: ProgressRequest(progress: challenge.myProgress)
+            body: ProgressRequest(progress: myProgress)
         )
-        return challenge.isChallenger ? dto.opponentProgress : dto.challengerProgress
+        return isChallenger ? dto.opponentProgress : dto.challengerProgress
     }
 
     /// 拉取服务端最新状态（单个挑战），内部同步用。
@@ -222,9 +223,8 @@ enum PKSyncService {
         return try await request(path: "/challenges", method: "GET")
     }
 
-    /// 注册 APNs device token，绑定到指定挑战。
-    static func registerDeviceToken(_ token: String, for challenge: PKChallenge) async throws {
-        guard let serverId = challenge.serverId else { return }
+    /// 注册 APNs device token，绑定到指定挑战（收纯 serverId，不碰 @Model）。
+    static func registerDeviceToken(_ token: String, serverId: String) async throws {
         struct OKResponse: Decodable { let ok: Bool }
         let _: OKResponse = try await request(
             path: "/challenges/\(serverId)/device-token",

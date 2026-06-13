@@ -25,9 +25,15 @@ struct LevelItApp: App {
         do {
             return try ModelContainer(for: schema, configurations: config)
         } catch {
-            // 迁移失败时删除旧数据库重建，比卡死或 crash 更友好
+            // 迁移失败时删除旧数据库重建，比卡死或 crash 更友好。
+            // SQLite 有 .store / .store-wal / .store-shm 三个文件，必须一并删除，
+            // 否则残留的 WAL/SHM 会让重建出的 store 处于不一致状态、继续卡死。
             let storeURL = config.url
-            try? FileManager.default.removeItem(at: storeURL)
+            for suffix in ["", "-wal", "-shm"] {
+                let path = storeURL.deletingLastPathComponent()
+                    .appendingPathComponent(storeURL.lastPathComponent + suffix)
+                try? FileManager.default.removeItem(at: path)
+            }
             do {
                 return try ModelContainer(for: schema, configurations: config)
             } catch {

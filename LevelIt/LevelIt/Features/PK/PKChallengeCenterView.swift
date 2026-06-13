@@ -644,7 +644,9 @@ struct PKChallengeCenterView: View {
         claimMyName = profile.displayName
     }
 
-    /// 拉取所有进行中挑战的对手进度并推送我方进度
+    /// 拉取所有进行中挑战的对手进度并推送我方进度。
+    /// 全程在主 actor 上顺序执行：await 网络时会挂起（不阻塞 UI），但绝不在后台线程
+    /// 访问 SwiftData @Model 对象——后者会导致真机 hang/crash。
     @MainActor
     private func syncActiveChallenges() async {
         guard !isSyncing, AuthSessionStore.isAuthenticated else { return }
@@ -652,29 +654,30 @@ struct PKChallengeCenterView: View {
         defer { isSyncing = false }
 
         let active = challenges.filter { $0.status == .accepted && $0.serverId != nil }
-        await withTaskGroup(of: Void.self) { group in
-            for challenge in active {
-                group.addTask {
-                    do {
-                        let newOppProgress = try await PKSyncService.pushProgress(challenge)
-                        await MainActor.run {
-                            challenge.opponentProgress = newOppProgress
-                        }
-                    } catch { }
-                }
-            }
+        for challenge in active {
+            // 在主 actor 上先取出纯值
+            guard let serverId = challenge.serverId else { continue }
+            let isChallenger = challenge.isChallenger
+            let myProgress = challenge.myProgress
+            do {
+                let newOpp = try await PKSyncService.pushProgress(
+                    serverId: serverId, isChallenger: isChallenger, myProgress: myProgress
+                )
+                // 续体在主 actor 上恢复，写回模型是安全的
+                challenge.opponentProgress = newOpp
+            } catch { }
         }
         try? modelContext.save()
     }
 
-    /// 将 APNs device token 注册到当前所有有 serverId 的挑战
+    /// 将 APNs device token 注册到当前所有有 serverId 的挑战（同样全程主 actor）
     @MainActor
     private func registerDeviceTokenForActive(_ token: String) async {
-        let active = challenges.filter { $0.serverId != nil && !$0.status.isTerminal }
-        await withTaskGroup(of: Void.self) { group in
-            for challenge in active {
-                group.addTask { try? await PKSyncService.registerDeviceToken(token, for: challenge) }
-            }
+        let serverIds = challenges
+            .filter { $0.serverId != nil && !$0.status.isTerminal }
+            .compactMap { $0.serverId }
+        for serverId in serverIds {
+            try? await PKSyncService.registerDeviceToken(token, serverId: serverId)
         }
     }
 
