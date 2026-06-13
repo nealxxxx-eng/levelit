@@ -25,7 +25,9 @@ echo "    指纹已写入 ~/.ssh/known_hosts"
 echo "==> 上传文件到 $SERVER:$REMOTE_DIR ..."
 ssh "root@$SERVER" "mkdir -p $REMOTE_DIR/api"
 scp "$SCRIPT_DIR/server.js" "$SCRIPT_DIR/package.json" "root@$SERVER:$REMOTE_DIR/"
-scp "$SCRIPT_DIR/api/pk.js" "$SCRIPT_DIR/api/apns.js" "root@$SERVER:$REMOTE_DIR/api/"
+scp "$SCRIPT_DIR/api/pk.js" "$SCRIPT_DIR/api/apns.js" \
+    "$SCRIPT_DIR/api/social.js" "$SCRIPT_DIR/api/users-store.js" \
+    "root@$SERVER:$REMOTE_DIR/api/"
 
 # ── 远程配置
 echo "==> 配置服务器..."
@@ -46,6 +48,7 @@ cat > "$ENV_FILE" << EOF
 LEVELIT_AUTH_SECRET=\$SECRET
 LEVELIT_DB_FILE=$DB_DIR/users.json
 LEVELIT_PK_DB_FILE=$DB_DIR/pk.json
+LEVELIT_SOCIAL_DB_FILE=$DB_DIR/social.json
 NODE_ENV=production
 EOF
 chmod 600 "$ENV_FILE"
