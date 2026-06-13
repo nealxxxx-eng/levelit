@@ -65,6 +65,7 @@ public final class PKChallenge {
     public var durationDays: Int
     public var linkedTaskId: String?
     public var serverId: String?      // 服务端分配的 UUID，nil = 未同步
+    public var serverInviteCode: String? // 服务端生成的邀请码，认领必须用它（nil = 未同步）
     public var opponentProgress: Int  // 对手这侧进度（Phase 2 同步）
     public var createdAt: Date
     public var expiresAt: Date        // 邀请过期时间，默认 48h
@@ -88,7 +89,8 @@ public final class PKChallenge {
         note: String? = nil,
         isChallenger: Bool = true,
         expiresInHours: Double = 48,
-        serverId: String? = nil
+        serverId: String? = nil,
+        serverInviteCode: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -101,6 +103,7 @@ public final class PKChallenge {
         self.durationDays = max(1, durationDays)
         self.linkedTaskId = linkedTaskId
         self.serverId = serverId
+        self.serverInviteCode = serverInviteCode
         self.opponentProgress = 0
         self.createdAt = Date()
         self.expiresAt = Date().addingTimeInterval(expiresInHours * 3600)
@@ -113,13 +116,26 @@ public final class PKChallenge {
 
     // MARK: - Computed
 
+    /// 本地回退码（仅在尚未同步到服务端时占位用）。
+    /// 注意：认领是服务端按 inviteCode 匹配的，本地码与服务端码不同，不能用于真正认领。
     public var shareCode: String {
         "\(challengerCode)-\(String(id.prefix(6)).uppercased())"
     }
 
+    /// 对外展示与分享用的邀请码：优先用服务端返回的（认领必须用它），
+    /// 未同步时回退本地占位码。
+    public var effectiveInviteCode: String {
+        serverInviteCode ?? shareCode
+    }
+
+    /// 是否已可被认领（必须已拿到服务端邀请码）
+    public var isShareable: Bool {
+        serverInviteCode != nil
+    }
+
     public var inviteText: String {
         let target = type == .streakSprint ? "\(durationDays) 天" : "\(targetCalories) kcal"
-        return "\(challengerName) 邀请你参加 LevelIt「\(title)」：目标 \(target)，邀请码 \(shareCode)。"
+        return "\(challengerName) 邀请你参加 LevelIt「\(title)」：目标 \(target)，邀请码 \(effectiveInviteCode)。"
     }
 
     /// 邀请是否已自然过期（未被认领且已超时）

@@ -123,8 +123,9 @@ enum PKSyncService {
 
     // MARK: - Public API
 
-    /// 将本地新建的挑战上传服务端，返回服务端 id。
-    static func createChallenge(_ challenge: PKChallenge) async throws -> String {
+    /// 将本地新建的挑战上传服务端，返回服务端 id 和服务端生成的邀请码。
+    /// 认领必须用服务端的 inviteCode（与本地占位码不同）。
+    static func createChallenge(_ challenge: PKChallenge) async throws -> (serverId: String, inviteCode: String) {
         let expiresInHours = challenge.expiresAt.timeIntervalSince(Date()) / 3600
         let body = CreateRequest(
             type: challenge.type.rawValue,
@@ -138,7 +139,7 @@ enum PKSyncService {
             expiresInHours: max(1, expiresInHours)
         )
         let dto: ChallengeDTO = try await request(path: "/challenges", method: "POST", body: body)
-        return dto.id
+        return (dto.id, dto.inviteCode)
     }
 
     /// 用邀请码认领挑战，返回已填充服务端数据的本地 PKChallenge（调用方负责 insert 到 modelContext）。

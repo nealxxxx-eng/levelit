@@ -181,8 +181,8 @@ struct PKChallengeCenterView: View {
                 sliderRow(title: "目标消耗", value: $targetCalories, range: 50...1200, step: 10, display: "\(Int(targetCalories)) kcal")
             }
 
-            Button { createInvite() } label: {
-                Label("生成邀请", systemImage: "paperplane.fill")
+            Button { Task { await createInvite() } } label: {
+                Label(isSyncing ? "生成中…" : "生成邀请", systemImage: "paperplane.fill")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -190,6 +190,7 @@ struct PKChallengeCenterView: View {
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
             }
+            .disabled(isSyncing)
         }
         .padding()
         .background(DS.Colors.cardBackground)
@@ -232,7 +233,7 @@ struct PKChallengeCenterView: View {
                 Text("邀请已生成")
                     .font(.headline)
                 Spacer()
-                Text(challenge.shareCode)
+                Text(challenge.effectiveInviteCode)
                     .font(.caption.monospaced().weight(.semibold))
                     .foregroundStyle(DS.Colors.accent)
             }
@@ -564,7 +565,8 @@ struct PKChallengeCenterView: View {
 
     // MARK: - 业务逻辑
 
-    private func createInvite() {
+    @MainActor
+    private func createInvite() async {
         let opponent = opponentName.trimmingCharacters(in: .whitespacesAndNewlines)
         let title: String
         switch challengeType {
@@ -573,6 +575,8 @@ struct PKChallengeCenterView: View {
         case .streakSprint:   title = "\(Int(durationDays)) 天连续磨平"
         }
 
+        // 先构造但不落库——必须等服务端创建成功、拿到真正的邀请码再保存，
+        // 否则对方拿到的是本地占位码、永远认领失败。
         let challenge = PKChallenge(
             type: challengeType,
             title: title,
@@ -583,20 +587,24 @@ struct PKChallengeCenterView: View {
             durationDays: Int(durationDays),
             linkedTaskId: allTasks.first(where: { $0.isPendingForDay() })?.id
         )
-        modelContext.insert(challenge)
-        try? modelContext.save()
-        latestInvite = challenge
-        opponentName = ""
 
-        // 上传服务端（fire-and-forget，失败不影响本地功能）
-        Task {
-            do {
-                let serverId = try await PKSyncService.createChallenge(challenge)
-                challenge.serverId = serverId
-                try? modelContext.save()
-            } catch {
-                // 无网络时静默忽略，下次同步时会重试
-            }
+        isSyncing = true
+        defer { isSyncing = false }
+
+        do {
+            let result = try await PKSyncService.createChallenge(challenge)
+            challenge.serverId = result.serverId
+            challenge.serverInviteCode = result.inviteCode
+            modelContext.insert(challenge)
+            try? modelContext.save()
+            latestInvite = challenge
+            opponentName = ""
+        } catch PKSyncService.PKSyncError.notLoggedIn {
+            syncError = "请先登录账号才能发起挑战"
+            showSyncError = true
+        } catch {
+            syncError = "网络异常，挑战创建失败，请稍后重试"
+            showSyncError = true
         }
     }
 
