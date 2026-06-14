@@ -5,7 +5,7 @@ import LevelItShared
 /// 同步本地 PKChallenge 与服务端的 CRUD 操作。
 /// 所有方法都是 async throws。网络不可用时抛 PKSyncError，调用方决定是否静默忽略。
 enum PKSyncService {
-    private static let baseURL = "http://39.105.196.84/api/pk"
+    private static let baseURL = APIConfig.apiBase + "/pk"
     private static let timeout: TimeInterval = 20
 
     enum PKSyncError: LocalizedError {

@@ -3,7 +3,7 @@ import LevelItShared
 
 /// 调用阿里云 ECS 中转代理，让后台大模型估算每日总能量消耗。
 enum DailyEnergyEstimateService {
-    private static let endpoint = "http://39.105.196.84/api/estimate-daily-energy"
+    private static let endpoint = APIConfig.apiBase + "/estimate-daily-energy"
     private static let timeoutSeconds: TimeInterval = 45
 
     struct EstimateResult: Decodable {

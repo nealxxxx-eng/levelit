@@ -4,7 +4,7 @@ import LevelItShared
 /// 社交后端客户端：用户名、搜索、好友、发榜广场、排行榜。
 /// 与 PKSyncService 同源（同一后端、Bearer token），网络不可用时抛 SocialError。
 enum SocialService {
-    private static let base = "http://39.105.196.84/api"
+    private static let base = APIConfig.apiBase
     private static let timeout: TimeInterval = 20
 
     enum SocialError: LocalizedError {

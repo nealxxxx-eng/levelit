@@ -2,7 +2,7 @@ import Foundation
 import LevelItShared
 
 enum AliyunAuthService {
-    private static let baseURL = "http://39.105.196.84/api"
+    private static let baseURL = APIConfig.apiBase
     private static let timeoutSeconds: TimeInterval = 30
 
     struct AuthResult: Decodable {

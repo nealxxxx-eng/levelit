@@ -3,7 +3,7 @@ import LevelItShared
 
 /// 调用阿里云 ECS 中转代理 → Kimi-K2.5 Vision API 识别食物并估算热量
 enum FoodAnalysisService {
-    private static let endpoint = "http://39.105.196.84/api/analyze"
+    private static let endpoint = APIConfig.apiBase + "/analyze"
     private static let maxImageDimension: CGFloat = 512
     private static let jpegQuality: CGFloat = 0.7
     private static let timeoutSeconds: TimeInterval = 60
