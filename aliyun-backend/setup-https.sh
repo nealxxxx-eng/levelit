@@ -37,14 +37,16 @@ ACME="$HOME/.acme.sh/acme.sh"
 # 2. DuckDNS DNS-01 签证书(不需要 80 端口,避开备案拦截)
 export DuckDNS_Token="$DUCKDNS_TOKEN"
 echo "    申请证书(DNS-01)..."
-"$ACME" --issue --dns dns_duckdns -d "$DOMAIN" --force
+# 不加 --force：证书已存在且有效时自动跳过，避免触发 Let's Encrypt 频率限制
+"$ACME" --issue --dns dns_duckdns -d "$DOMAIN" || true
 
 # 3. 安装证书到固定路径 + 续期后自动重启 TLS 服务
+#    reloadcmd 容错：首次运行时服务尚未创建（下一步才建），失败不应中止脚本
 mkdir -p /etc/levelit/tls
 "$ACME" --install-cert -d "$DOMAIN" \
   --fullchain-file /etc/levelit/tls/fullchain.pem \
   --key-file       /etc/levelit/tls/privkey.pem \
-  --reloadcmd      "systemctl restart levelit-tls"
+  --reloadcmd      "systemctl restart levelit-tls 2>/dev/null || true"
 
 # 4. systemd 服务
 NODE_BIN=$(command -v node || command -v nodejs)
