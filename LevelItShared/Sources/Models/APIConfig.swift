@@ -6,14 +6,18 @@ import Foundation
 /// 全 App 的网络层（认证 / PK / 社交 / AI 分析）一处生效；
 /// 同时记得移除 Info.plist 里的 ATS 明文例外。
 public enum APIConfig {
-    /// 传输协议：上线 HTTPS 后改为 "https"
+    // 切 HTTPS 时改这三行即可（并移除 Info.plist 的 ATS 例外）：
+    //   scheme = "https"; host = "levelit.duckdns.org"; port = 8443
     public static let scheme = "http"
-    /// 服务器主机：上线后改为你的域名（如 "api.levelit.app"）
     public static let host = "39.105.196.84"
+    public static let port: Int? = nil   // 非默认端口时填（如 HTTPS 8443）
 
-    /// 形如 http://39.105.196.84 —— 各服务在此基础上拼 /api/...
-    public static var origin: String { "\(scheme)://\(host)" }
+    /// 形如 http://39.105.196.84 或 https://levelit.duckdns.org:8443
+    public static var origin: String {
+        if let port { return "\(scheme)://\(host):\(port)" }
+        return "\(scheme)://\(host)"
+    }
 
-    /// 形如 http://39.105.196.84/api
+    /// 形如 <origin>/api
     public static var apiBase: String { "\(origin)/api" }
 }
