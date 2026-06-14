@@ -485,6 +485,18 @@ async function handleRegisterDeviceToken(req, res, id, userId) {
   });
 }
 
+// ── 账号删除级联：移除该用户参与的全部挑战
+export async function removeUserChallenges(userId) {
+  await withPKLock(async () => {
+    const db = await readDB();
+    const before = db.challenges.length;
+    db.challenges = db.challenges.filter(
+      (c) => c.challengerId !== userId && c.opponentId !== userId
+    );
+    if (db.challenges.length !== before) await writeDB(db);
+  });
+}
+
 // ── 排行榜：基于 PK 数据聚合（胜场 + 挑战内累计消耗）
 //    胜场 = 完成的挑战中自己这侧达标；消耗 = 自己各挑战进度之和（服务端已存）。
 export async function handleLeaderboard(req, res, url, userId) {

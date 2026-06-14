@@ -117,6 +117,20 @@ enum AliyunAuthService {
         UserProfileStore.clear()
     }
 
+    /// 删除账号：请求服务端删除用户及其 PK/好友数据，成功后清空本地会话与档案。
+    /// 调用方负责清理本地 SwiftData（挑战等）并跳回登录页。
+    static func deleteAccount() async throws {
+        let _: DeleteResponse = try await send(
+            path: "/auth/account",
+            method: "DELETE",
+            body: Optional<String>.none,
+            token: try currentToken()
+        )
+        logout()
+    }
+
+    private struct DeleteResponse: Decodable { let ok: Bool }
+
     private static func currentToken() throws -> String {
         guard let token = AuthSessionStore.current?.token else {
             throw AuthError.missingSession

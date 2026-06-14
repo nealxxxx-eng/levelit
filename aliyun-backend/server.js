@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import http from "node:http";
-import { handlePKRoutes, handleLeaderboard } from "./api/pk.js";
+import { handlePKRoutes, handleLeaderboard, removeUserChallenges } from "./api/pk.js";
 import { sendPushNotification } from "./api/apns.js";
-import { handleSocialRoutes } from "./api/social.js";
+import { handleSocialRoutes, removeUserLinks } from "./api/social.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const DB_FILE = process.env.LEVELIT_DB_FILE || "./levelit-users.json";
@@ -353,6 +353,30 @@ async function handleProfileUpdate(req, res) {
   });
 }
 
+// ── 删除账号（Apple 5.1.1(v) 要求）：删用户 + 级联清理 PK 挑战与好友关系
+async function handleDeleteAccount(req, res) {
+  const claims = verifyToken(bearerToken(req));
+  if (!claims?.sub) { json(res, 401, { error: "unauthorized" }); return; }
+
+  let existed = false;
+  await withDBLock(async () => {
+    const db = await readDB();
+    const idx = db.users.findIndex(u => u.id === claims.sub);
+    if (idx === -1) return;
+    existed = true;
+    db.users.splice(idx, 1);
+    await writeDB(db);
+  });
+
+  if (!existed) { json(res, 404, { error: "user not found" }); return; }
+
+  // 级联清理（各自带锁）
+  await removeUserChallenges(claims.sub);
+  await removeUserLinks(claims.sub);
+
+  json(res, 200, { ok: true });
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -361,6 +385,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/auth/me") return handleMe(req, res);
     if (req.method === "PUT" && url.pathname === "/api/auth/profile") return handleProfileUpdate(req, res);
     if (req.method === "PUT" && url.pathname === "/api/auth/username") return handleSetUsername(req, res);
+    if (req.method === "DELETE" && url.pathname === "/api/auth/account") return handleDeleteAccount(req, res);
     if (req.method === "GET" && url.pathname === "/api/users/search") return handleUserSearch(req, res, url);
     if (req.method === "GET" && url.pathname === "/health") return json(res, 200, { ok: true });
 

@@ -189,6 +189,16 @@ async function removeFriend(req, res, userId, username) {
   });
 }
 
+// ── 账号删除级联：移除该用户的全部好友关系/请求
+export async function removeUserLinks(userId) {
+  await withLock(async () => {
+    const db = await readDB();
+    const before = db.links.length;
+    db.links = db.links.filter(l => l.fromUserId !== userId && l.toUserId !== userId);
+    if (db.links.length !== before) await writeDB(db);
+  });
+}
+
 /** 判断两人是否好友（供 pk.js 校验"只能挑战好友"等场景，可选用） */
 export async function areFriends(userA, userB) {
   const db = await readDB();

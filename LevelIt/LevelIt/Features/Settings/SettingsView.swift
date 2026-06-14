@@ -1,11 +1,18 @@
 import SwiftUI
+import SwiftData
 import LevelItShared
 
 /// 综合设置：用户档案 + AI 日常消耗估算 + 餐次配置入口
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     var onSaved: (() -> Void)?
     var onLogout: (() -> Void)?
+
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
+    @State private var deleteError: String?
+    @State private var showDeleteError = false
 
     @State private var displayName: String = "LevelIt 用户"
     @State private var inviteCode: String = UserProfileStore.current?.inviteCode ?? UserProfile.makeInviteCode()
@@ -65,8 +72,43 @@ struct SettingsView: View {
             } label: {
                 Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
             }
+
+            Button(role: .destructive) {
+                showDeleteConfirm = true
+            } label: {
+                Label(isDeleting ? "删除中…" : "删除账号", systemImage: "trash")
+                    .foregroundStyle(.red)
+            }
+            .disabled(isDeleting)
         } footer: {
-            Text("退出后会清除本机 token 和用户资料缓存，再次使用需要重新登录。")
+            Text("退出登录仅清除本机缓存。删除账号将永久移除你的云端账号、档案及全部 PK/好友数据，不可恢复。")
+        }
+        .alert("永久删除账号？", isPresented: $showDeleteConfirm) {
+            Button("删除账号", role: .destructive) { Task { await deleteAccount() } }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("此操作不可撤销：你的账号、云端档案、所有挑战与好友关系都会被永久删除。")
+        }
+        .alert("删除失败", isPresented: $showDeleteError) {
+            Button("好的", role: .cancel) {}
+        } message: {
+            Text(deleteError ?? "请稍后重试")
+        }
+    }
+
+    @MainActor
+    private func deleteAccount() async {
+        isDeleting = true
+        defer { isDeleting = false }
+        do {
+            try await AliyunAuthService.deleteAccount()
+            // 清空本地 PK 挑战（已随账号删除，本地不应残留）
+            try? modelContext.delete(model: PKChallenge.self)
+            try? modelContext.save()
+            onLogout?()
+        } catch {
+            deleteError = (error as? LocalizedError)?.errorDescription ?? "网络异常，删除未完成"
+            showDeleteError = true
         }
     }
 
