@@ -1,5 +1,32 @@
 # 磨平 LevelIt — CHANGELOG
 
+## [0.6.0] - 2026-06 — 账号体系与社交 PK
+
+> 详见 `磨平App_账号与社交PK_v0.6.0.md`、上架清单见 `AppStore上架准备清单_v1.0.md`。
+
+### 新增功能
+- **独立账号体系**：邮箱/手机号 + 密码注册登录，JWT（30 天）会话；档案/磨平数据云端同步、换机恢复；界面文案与服务商解耦。
+- **注册体验**：年龄/身高/体重改三列滚轮选择器；分步页改 `ZStack+switch` 消除预渲染卡顿。
+- **朋友 PK 五路配对**：服务端邀请码、唯一 username 搜索加好友、定向好友挑战（对方「接受」）、发榜广场（任何人认领，自己发的标「我发布的」）。
+- **排行榜**：按 PK 胜场 + 累计消耗排名，高亮本人。
+- **挑战生命周期管理**：待认领前可编辑/撤回/删除/重分享；行内 ••• 菜单（替代在 ScrollView 中失效的 swipe）。
+
+### 后端
+- `levelit-proxy`（80）catch-all 转发 `/api/*` 到 auth backend（3000）；新增 `api/social.js`、`api/users-store.js`。
+- 新端点：`/api/auth/username`、`/api/users/search`、`/api/friends/*`、`/api/pk/board`、`/api/pk/challenges/:id/accept`、`/api/leaderboard`。
+- 部署脚本复用已有 secret（不再每次部署登出全员）。
+
+### 安全加固（审计 #2、#4–#10）
+- AI 端点加鉴权（委托 `/api/auth/me`）；token 迁 Keychain；PK 进度防作弊限速；deviceToken 64-hex 校验；账号枚举中性化；响应不泄露内部 userId；输入有限数校验。
+
+### 修复
+- 邀请码两端不一致导致认领永远失败（改用服务端邀请码）。
+- PK 页真机卡死：杜绝后台线程访问 SwiftData @Model；SwiftData 迁移兜底删除 `.store/-wal/-shm` 重建。
+- 离线被误登出：仅 `missingSession`/HTTP 401 才登出。
+
+### 待办（上架前）
+- **#1 全程 HTTPS**（密码/照片/好友关系仍走明文）、#3 接口限流、应用内删除账号、加密合规声明。
+
 ## [0.5.0] - 2026-05-10 — 食物摄入与餐次管理体系
 
 ### 新增功能
