@@ -8,15 +8,22 @@
 
 ## 🔴 硬阻断（不解决无法提交 / 大概率被拒）
 
-### 1. 全程 HTTPS（最高优先）
-- **现状**：App 通过明文 `http://39.105.196.84` 传输**登录密码、JWT、用户的食物照片、好友关系**；`Info.plist` 开了 ATS 例外 `NSAllowsInsecureHTTPLoads`。
-- **风险**：Apple 审核指南 5.1.1（数据安全）要求敏感数据加密传输；明文传密码/健康相关数据是明确的拒绝理由，ATS 例外也需充分理由。
-- **要做**：
-  1. 给服务器配**域名**（备案视情况）→ 申请证书（Let's Encrypt 免费 / 阿里云 SLB 终止 TLS）。
-  2. `levelit-proxy` 监听 443，HTTP 跳转 HTTPS。
-  3. 客户端 4 处 `http://` 改 `https://`（`AliyunAuthService` / `PKSyncService` / `SocialService` / `FoodAnalysisService` / `DailyEnergyEstimateService`）。
-  4. **移除 `Info.plist` 的 ATS 例外**。
-- 我可提供逐步操作脚本。
+### 1. 全程 HTTPS（最高优先 · 当前被大陆备案阻断，已暂缓）
+- **现状**：App 通过明文 `http://39.105.196.84`（IP）传输**登录密码、JWT、食物照片、好友关系**；`Info.plist` 开了 ATS 例外。
+- **风险**：Apple 5.1.1 要求敏感数据加密传输；明文传密码/健康数据是明确拒绝理由。**HTTPS 是上架硬门槛**。
+
+- **2026-06 诊断结论（重要，已验证）**：
+  - 已在服务器搭好 HTTPS：DuckDNS 子域名 `levelit.duckdns.org` + Let's Encrypt 证书（DNS-01 签发，acme.sh 自动续期）+ 8443 端口 TLS 终结器（`levelit-tls.mjs` → 转发本机 :80）。**按 IP 直连 8443 返回 200，证书与服务均正常。**
+  - **但按域名连接被重置**：实测 TLS 握手 SNI=域名 → 连接 000（reset）；SNI=IP → 200。这是**阿里云大陆机房入口的 ICP 备案 SNI 拦截**——未备案域名在任意端口都被掐。拦截在服务器入口，故任何客户端（含海外审核员）按域名都连不上。
+  - 结论：**当前大陆 ECS + 未备案域名，HTTPS 走不通；换端口/换证书无效。**
+
+- **恢复 HTTPS 的两条路（择一）**：
+  1. **迁香港/海外区 ECS（推荐）**：新开 HK ECS → 用现成脚本重新部署后端（`deploy-auth.sh` + 代理 + `setup-https.sh`/`finish-https.sh`）→ 迁移 `users.json`/`pk.json`/`social.json` → DuckDNS 改指向新 IP。香港无需备案，域名+已签证书立即可用。HTTPS 设施已在本仓库就绪。
+  2. **ICP 备案**：保留大陆服务器，但需**自有域名**（DuckDNS 不行）走完备案（数周、需材料）。
+
+- **HTTPS 通后客户端只需**：`APIConfig.swift` 改 `scheme="https"` / `host=域名` / `port=8443`（一处），并移除 `Info.plist` 的 ATS 例外。客户端网络层已全部走 `APIConfig`，无需逐个改。
+
+- **当前决定**：暂缓上架，继续用 IP 明文做内部测试。**带真实用户/正式上架前必须先解决本项。**
 
 ### 2. 付费 Apple Developer 账号
 - 免费个人 Team **无法**提交 App Store（也加不了推送等能力）。
