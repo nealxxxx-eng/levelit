@@ -50,7 +50,8 @@ enum SocialService {
         let burned: Int
         let completed: Int
         let isMe: Bool
-        var id: String { username }
+        // id 用 rank+username 组合，避免多个未设 username 的用户（username 兜底成同值）id 冲突
+        var id: String { "\(rank)|\(username)" }
 
         enum CodingKeys: String, CodingKey {
             case rank, username, displayName, wins, burned, completed, isMe
@@ -59,8 +60,12 @@ enum SocialService {
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             rank = try c.decodeIfPresent(Int.self, forKey: .rank) ?? 0
-            username = try c.decode(String.self, forKey: .username)
-            displayName = try c.decodeIfPresent(String.self, forKey: .displayName) ?? username
+            // 后端对未设 username 的用户返回 username:null（getPublicUserMap: u.username || null）。
+            // username 必须容错，否则任一无名用户都会让整个排行榜解码失败。
+            let name = try c.decodeIfPresent(String.self, forKey: .displayName)
+            let uname = try c.decodeIfPresent(String.self, forKey: .username)
+            username = uname ?? name ?? "用户"
+            displayName = name ?? uname ?? "用户"
             wins = try c.decodeIfPresent(Int.self, forKey: .wins) ?? 0
             burned = try c.decodeIfPresent(Int.self, forKey: .burned) ?? 0
             completed = try c.decodeIfPresent(Int.self, forKey: .completed) ?? 0

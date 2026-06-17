@@ -3,7 +3,9 @@
 ## [Unreleased] - 2026-06-17 — PK 进度计入修复
 
 ### 修复
-- **先结清 / 连续打卡挑战不计 HealthKit 运动（本次主因）**：`firstToSettle / streakSprint` 类型的进度此前只统计磨平还债任务账本，完全不查 HealthKit，导致 Apple Watch 等纯 HealthKit 运动（无对应还债任务）无法计入挑战。`PKChallengeProgressService.localProgress` 改为三种类型统一取 `min(target, max(HealthKit 运动, 还债账本))`，真实运动消耗一律计入（max 去重避免本 App 运动重复计算）。
+- **先结清 / 连续打卡挑战不计 HealthKit 运动**：`firstToSettle / streakSprint` 类型的进度此前只统计磨平还债任务账本，完全不查 HealthKit，导致 Apple Watch 等纯 HealthKit 运动（无对应还债任务）无法计入挑战。`PKChallengeProgressService.localProgress` 改为三种类型统一取 `min(target, max(HealthKit 运动, 还债账本))`，真实运动消耗一律计入（max 去重避免本 App 运动重复计算）。
+- **统计窗口右边界过期导致漏算当天运动**：`challengeWindow` 旧实现 `end = 开始 + durationDays 天`，挑战进行超过该天数后，当天的新运动被 `startDate < end` 排除，而更早的旧运动反被计入（实测现象：算了周一的运动、漏了今天的）。改为统计窗口 `[开始, 现在]`，提取为可测纯函数 `PKProgressWindow`（`LevelItShared/Sources/Utils/`）+ 单测 `PKProgressWindowTests`。`durationDays` 仅用于过期判断，不再限制统计上界。
+- **排行榜因无 username 用户而整体解码失败**：后端 `getPublicUserMap` 对未设 username 的用户返回 `username:null`，而客户端 `LeaderboardRow.username` 是必需解码字段，任一无名用户都会让整个排行榜解码失败（弹 "data couldn't be read because it is missing"）。`username` 改为容错（null/缺失时用 displayName 兜底），行 `id` 改为 `rank+username` 避免兜底后 id 冲突。
 - **PK 时间字段解析丢失（附带修复的另一真 bug）**：后端 `new Date().toISOString()` 输出带毫秒（`...000Z`），而客户端用默认 `ISO8601DateFormatter().date(from:)` 无法解析带小数秒的串，返回 nil，导致 `acceptedAt / expiresAt / completedAt` 丢失 → 过期倒计时、完成时间、进度时间窗口失真。
   - 新增容错解析工具 `ISO8601`（`LevelItShared/Sources/Utils/ISO8601DateParsing.swift`）：先按带毫秒解析、失败回退标准格式；输出统一带毫秒，往返无损。
   - `PKSyncService` 全部 5 处解码 + 2 处编码改用该工具。

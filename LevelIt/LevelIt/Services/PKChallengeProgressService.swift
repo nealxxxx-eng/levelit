@@ -119,13 +119,9 @@ enum PKChallengeProgressService {
     }
 
     private static func challengeWindow(for challenge: PKChallenge) -> (start: Date, end: Date) {
-        let start = challenge.acceptedAt ?? challenge.createdAt
-        let end = Calendar.current.date(
-            byAdding: .day,
-            value: max(1, challenge.durationDays),
-            to: start
-        ) ?? start.addingTimeInterval(TimeInterval(max(1, challenge.durationDays)) * 24 * 3600)
-        return (start, end)
+        // 统计窗口 = [挑战开始, 现在]。详见 PKProgressWindow：上界取 now 而非
+        // start+durationDays，避免挑战进行超过 durationDays 天后把今天的运动错误排除。
+        PKProgressWindow.range(start: challenge.acceptedAt ?? challenge.createdAt)
     }
 
     private static func fetchChallenges(in modelContext: ModelContext) -> [PKChallenge] {
