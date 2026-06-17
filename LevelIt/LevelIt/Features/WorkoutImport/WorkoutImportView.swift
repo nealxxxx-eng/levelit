@@ -351,6 +351,9 @@ struct WorkoutImportView: View {
 
         // 6. 同步到 Watch
         WCSyncService.shared.sendTaskSnapshot(task)
+        Task { @MainActor in
+            await PKChallengeProgressService.refreshForTask(taskId: task.id, in: modelContext)
+        }
 
         appliedCalories = consumedCal
         appliedTask = task

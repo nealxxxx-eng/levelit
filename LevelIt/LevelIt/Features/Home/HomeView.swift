@@ -24,6 +24,18 @@ struct HomeView: View {
         store.todayExternalWorkouts.filter { !ImportedWorkoutLedger.isImported($0.id.uuidString, in: modelContext) }
     }
 
+    private var todayWorkouts: [HealthKitImportService.WorkoutSummary] {
+        store.todayWorkoutSummaries
+    }
+
+    private var todayWorkoutCalories: Int {
+        todayWorkouts.reduce(0) { $0 + $1.calories }
+    }
+
+    private var todayWorkoutMinutes: Int {
+        Int(todayWorkouts.reduce(0.0) { $0 + $1.duration } / 60)
+    }
+
     private var pendingKcal: Int {
         pendingTasks.reduce(0) { $0 + max(0, $1.estimatedCalories - $1.burnedCalories) }
     }
@@ -111,7 +123,9 @@ struct HomeView: View {
         }
         .task(id: scenePhase) {
             // 每次回到前台时刷新今日外部运动 (系统运动在后台完成后能即时显示)
-            guard scenePhase == .active, !pendingTasks.isEmpty else { return }
+            guard scenePhase == .active else { return }
+            await store.refreshTodayWorkoutSummaries()
+            guard !pendingTasks.isEmpty else { return }
             await store.refreshTodayWorkouts()
         }
         .alert("确认删除", isPresented: .init(
@@ -140,6 +154,9 @@ struct HomeView: View {
                     if !todayIntakes.isEmpty {
                         todayIntakePreview
                     }
+                    if !todayWorkouts.isEmpty {
+                        todayWorkoutPreview
+                    }
                 } else {
                     debtHeader
                     statsRow
@@ -156,6 +173,10 @@ struct HomeView: View {
 
                     if !todayIntakes.isEmpty {
                         todayIntakePreview
+                    }
+
+                    if !todayWorkouts.isEmpty {
+                        todayWorkoutPreview
                     }
 
                     pendingSection
@@ -447,6 +468,79 @@ struct HomeView: View {
             .background(color.opacity(0.15))
             .foregroundStyle(color)
             .clipShape(Capsule())
+    }
+
+    // MARK: - 今日运动预览（展示用，不等同于可抵扣）
+
+    private var todayWorkoutPreview: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+            HStack {
+                Image(systemName: "figure.walk.circle.fill")
+                    .foregroundStyle(.green)
+                Text("今日运动记录")
+                    .font(.headline)
+                Spacer()
+                Text("\(todayWorkoutMinutes) 分钟 · \(todayWorkoutCalories) kcal")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(todayWorkouts.prefix(3), id: \.id) { workout in
+                HStack(spacing: DS.Spacing.md) {
+                    Image(systemName: workout.iconName)
+                        .font(.title3)
+                        .foregroundStyle(.green)
+                        .frame(width: 28)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(workout.displayName)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                        HStack(spacing: 6) {
+                            Text("\(workout.durationMinutes) 分钟")
+                            Text(workout.source)
+                            if workout.isLevelIt {
+                                Text("磨平")
+                                    .font(.caption2.weight(.medium))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(DS.Colors.accent.opacity(0.14))
+                                    .foregroundStyle(DS.Colors.accent)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Text("\(workout.calories)")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.green)
+                }
+                .padding(.vertical, 4)
+            }
+
+            if todayWorkouts.count > 3 {
+                Button {
+                    withAnimation { currentPage = 2 }
+                } label: {
+                    HStack {
+                        Text("查看全部 \(todayWorkouts.count) 条")
+                            .font(.caption.weight(.medium))
+                        Image(systemName: "arrow.right")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(DS.Colors.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+                }
+            }
+        }
+        .padding()
+        .background(DS.Colors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
     }
 
     // MARK: - 待磨平列表

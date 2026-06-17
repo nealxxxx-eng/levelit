@@ -246,9 +246,9 @@ final class WCSyncService: NSObject {
     /// 同步更新 burnedCalories 后, 检查是否应该自动结清
     private func autoCompleteIfNeeded(_ task: DebtTask) {
         guard task.burnedCalories >= task.targetBurnCalories else { return }
-        guard task.status == .inProgress || task.status == .paused else { return }
-        // paused → completed 不合法, 需先恢复到 inProgress
-        if task.status == .paused {
+        guard task.status == .created || task.status == .synced || task.status == .inProgress || task.status == .paused else { return }
+        // created/synced/paused → completed 不合法, 需先进入 inProgress
+        if task.status != .inProgress {
             TaskStateMachine.transition(task, to: .inProgress)
         }
         TaskStateMachine.transition(task, to: .completed)
@@ -305,6 +305,9 @@ final class WCSyncService: NSObject {
         task.lastSyncAt = Date()
         autoCompleteIfNeeded(task)
         try? context.save()
+        Task { @MainActor in
+            await PKChallengeProgressService.refreshForTask(taskId: taskId, in: context)
+        }
     }
 
     @MainActor
@@ -324,35 +327,51 @@ final class WCSyncService: NSObject {
            let statusRaw = message["status"] as? String,
            let status = TaskStatus(rawValue: statusRaw) {
             if let existing = allTasks.first(where: { $0.id == taskId }) {
-                TaskStateMachine.transition(existing, to: status)
                 if let b = message["burnedCalories"] as? Int { existing.burnedCalories = max(existing.burnedCalories, b) }
                 if let p = message["progressPercent"] as? Int { existing.progressPercent = max(existing.progressPercent, p) }
                 if let d = message["durationSeconds"] as? Int { existing.durationSeconds = max(existing.durationSeconds, d) }
+                if status == .completed || status == .settled {
+                    autoCompleteIfNeeded(existing)
+                } else {
+                    TaskStateMachine.transition(existing, to: status)
+                }
                 if let ts = message["completedAt"] as? TimeInterval { existing.completedAt = Date(timeIntervalSince1970: ts) }
                 if status == .settled && existing.completedAt == nil {
                     existing.completedAt = Date()
                 }
                 try? context.save()
+                Task { @MainActor in
+                    await PKChallengeProgressService.refreshForTask(taskId: taskId, in: context)
+                }
             }
             return
         }
 
         if let existing = allTasks.first(where: { $0.id == taskId }) {
             mergeDefinitionFields(into: existing, from: message)
-            if let statusRaw = message["status"] as? String,
-               let status = TaskStatus(rawValue: statusRaw) {
-                TaskStateMachine.transition(existing, to: status)
-            }
             existing.burnedCalories = max(existing.burnedCalories, message["burnedCalories"] as? Int ?? 0)
             existing.progressPercent = max(existing.progressPercent, message["progressPercent"] as? Int ?? 0)
             existing.durationSeconds = max(existing.durationSeconds, message["durationSeconds"] as? Int ?? 0)
             existing.isOverAchieved = message["isOverAchieved"] as? Bool ?? existing.isOverAchieved
+            if let statusRaw = message["status"] as? String,
+               let status = TaskStatus(rawValue: statusRaw) {
+                if status == .completed || status == .settled {
+                    autoCompleteIfNeeded(existing)
+                } else {
+                    TaskStateMachine.transition(existing, to: status)
+                }
+            }
             if let ts = message["completedAt"] as? TimeInterval { existing.completedAt = Date(timeIntervalSince1970: ts) }
             if existing.status == .settled && existing.completedAt == nil {
                 existing.completedAt = Date()
             }
             existing.lastSyncAt = Date()
             autoCompleteIfNeeded(existing)
+            try? context.save()
+            Task { @MainActor in
+                await PKChallengeProgressService.refreshForTask(taskId: taskId, in: context)
+            }
+            return
         } else {
             if let newTask = DebtTask.fromDict(message) {
                 context.insert(newTask)

@@ -131,7 +131,7 @@ enum HealthKitImportService {
                 let summaries = workouts.compactMap { workout -> WorkoutSummary? in
                     let energyType = HKQuantityType(.activeEnergyBurned)
                     let calories = Int(workout.statistics(for: energyType)?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0)
-                    guard calories > 0 else { return nil }
+                    guard calories > 0 || workout.duration > 0 else { return nil }
 
                     let bundle = workout.sourceRevision.source.bundleIdentifier
                     return WorkoutSummary(

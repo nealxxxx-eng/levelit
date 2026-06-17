@@ -203,7 +203,7 @@ enum PKSyncService {
             serverId: dto.id
         )
         if let acceptedStr = dto.acceptedAt {
-            challenge.acceptedAt = ISO8601DateFormatter().date(from: acceptedStr)
+            challenge.acceptedAt = ISO8601.date(from: acceptedStr)
         }
         return challenge
     }
@@ -211,13 +211,12 @@ enum PKSyncService {
     /// 更新服务端挑战字段（仅 invited 状态有效）。
     static func updateChallenge(_ challenge: PKChallenge) async throws {
         guard let serverId = challenge.serverId else { return }
-        let iso = ISO8601DateFormatter()
         let body = UpdateRequest(
             title: challenge.title,
             targetCalories: challenge.targetCalories,
             durationDays: challenge.durationDays,
             note: challenge.note,
-            expiresAt: iso.string(from: challenge.expiresAt),
+            expiresAt: ISO8601.string(from: challenge.expiresAt),
             status: nil
         )
         let _: ChallengeDTO = try await request(path: "/challenges/\(serverId)", method: "PUT", body: body)
@@ -259,7 +258,6 @@ enum PKSyncService {
     /// 映射为纯值快照供视图层合并进本地 SwiftData。
     static func fetchAllChallenges() async throws -> [RemoteChallenge] {
         let dtos: [ChallengeDTO] = try await request(path: "/challenges", method: "GET")
-        let iso = ISO8601DateFormatter()
         return dtos.map { d in
             let iAmChallenger = (d.myRole ?? "challenger") == "challenger"
             return RemoteChallenge(
@@ -278,8 +276,8 @@ enum PKSyncService {
                 targetCalories: d.targetCalories,
                 durationDays: d.durationDays,
                 note: d.note,
-                acceptedAt: d.acceptedAt.flatMap { iso.date(from: $0) },
-                completedAt: d.completedAt.flatMap { iso.date(from: $0) }
+                acceptedAt: d.acceptedAt.flatMap { ISO8601.date(from: $0) },
+                completedAt: d.completedAt.flatMap { ISO8601.date(from: $0) }
             )
         }
     }
@@ -305,10 +303,10 @@ enum PKSyncService {
             challenge.status = serverStatus
         }
         if let accepted = dto.acceptedAt {
-            challenge.acceptedAt = ISO8601DateFormatter().date(from: accepted)
+            challenge.acceptedAt = ISO8601.date(from: accepted)
         }
         if let completed = dto.completedAt {
-            challenge.completedAt = ISO8601DateFormatter().date(from: completed)
+            challenge.completedAt = ISO8601.date(from: completed)
         }
         if challenge.isChallenger, let opponentName = dto.opponentName {
             challenge.opponentName = opponentName

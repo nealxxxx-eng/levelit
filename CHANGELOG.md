@@ -1,5 +1,17 @@
 # 磨平 LevelIt — CHANGELOG
 
+## [Unreleased] - 2026-06-17 — PK 进度计入修复
+
+### 修复
+- **先结清 / 连续打卡挑战不计 HealthKit 运动（本次主因）**：`firstToSettle / streakSprint` 类型的进度此前只统计磨平还债任务账本，完全不查 HealthKit，导致 Apple Watch 等纯 HealthKit 运动（无对应还债任务）无法计入挑战。`PKChallengeProgressService.localProgress` 改为三种类型统一取 `min(target, max(HealthKit 运动, 还债账本))`，真实运动消耗一律计入（max 去重避免本 App 运动重复计算）。
+- **PK 时间字段解析丢失（附带修复的另一真 bug）**：后端 `new Date().toISOString()` 输出带毫秒（`...000Z`），而客户端用默认 `ISO8601DateFormatter().date(from:)` 无法解析带小数秒的串，返回 nil，导致 `acceptedAt / expiresAt / completedAt` 丢失 → 过期倒计时、完成时间、进度时间窗口失真。
+  - 新增容错解析工具 `ISO8601`（`LevelItShared/Sources/Utils/ISO8601DateParsing.swift`）：先按带毫秒解析、失败回退标准格式；输出统一带毫秒，往返无损。
+  - `PKSyncService` 全部 5 处解码 + 2 处编码改用该工具。
+  - 新增回归测试 `ISO8601ParsingTests`（带毫秒 / 不带毫秒 / 非法串 / 往返）。
+
+### 改进
+- **App 回前台自动刷新 PK 进度**：Apple Watch 等外部运动仅进 HealthKit、不经磨平运动事件，原先必须手动进「朋友 PK」页下拉刷新才计入。现在 `AppLifecycleCoordinator.handleBecameActive` 在回前台时自动 `PKChallengeProgressService.refreshAll`，运动完打开 App 即计入。（未引入 `HKObserverQuery` 后台监听——需额外 entitlement 且后台网络受限，收益边际。）
+
 ## [0.6.0] - 2026-06 — 账号体系与社交 PK
 
 > 详见 `磨平App_账号与社交PK_v0.6.0.md`、上架清单见 `AppStore上架准备清单_v1.0.md`。

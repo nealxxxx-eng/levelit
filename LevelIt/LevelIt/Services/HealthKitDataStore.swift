@@ -12,6 +12,7 @@ import Observation
 ///
 /// 消费方:
 ///   - HomeView: todayExternalWorkouts (banner)
+///   - HomeView/TodayView: todayWorkoutSummaries (今日运动展示)
 ///   - StatsView: periodWorkouts (图表)
 ///   - WorkoutImportView: todayExternalWorkouts (导入列表)
 @Observable
@@ -21,6 +22,7 @@ final class HealthKitDataStore {
     // MARK: - 公开数据
 
     private(set) var todayExternalWorkouts: [HealthKitImportService.ImportableWorkout] = []
+    private(set) var todayWorkoutSummaries: [HealthKitImportService.WorkoutSummary] = []
     private(set) var periodWorkouts: [HealthKitImportService.WorkoutSummary] = []
     private(set) var isLoadingToday = false
     private(set) var isLoadingPeriod = false
@@ -28,6 +30,7 @@ final class HealthKitDataStore {
     // MARK: - 缓存状态
 
     private var lastTodayFetchDate: Date?
+    private var lastTodaySummaryFetchDate: Date?
     private var lastPeriodKey: String?
     private var authorizationRequested = false
     private static let todayTTL: TimeInterval = 60
@@ -65,6 +68,26 @@ final class HealthKitDataStore {
         isLoadingToday = false
     }
 
+    /// 刷新今日所有运动摘要（含 LevelIt 自己记录的运动），用于首页和今日页展示。
+    @MainActor
+    func refreshTodayWorkoutSummaries(force: Bool = false) async {
+        guard HealthKitImportService.isAvailable else { return }
+
+        let now = Date()
+        if !force, let last = lastTodaySummaryFetchDate,
+           Calendar.current.isDate(last, inSameDayAs: now),
+           now.timeIntervalSince(last) < Self.todayTTL {
+            return
+        }
+
+        isLoadingToday = true
+        _ = await ensureAuthorization()
+        let start = Calendar.current.startOfDay(for: now)
+        todayWorkoutSummaries = await HealthKitImportService.fetchWorkoutsInRange(start: start, end: now)
+        lastTodaySummaryFetchDate = now
+        isLoadingToday = false
+    }
+
     // MARK: - 周/月统计运动 (StatsView)
 
     /// 刷新指定时间段的运动数据，按 period key 缓存避免重复查询
@@ -88,6 +111,7 @@ final class HealthKitDataStore {
     @MainActor
     func invalidateCache() {
         lastTodayFetchDate = nil
+        lastTodaySummaryFetchDate = nil
         lastPeriodKey = nil
     }
 }

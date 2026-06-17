@@ -51,6 +51,21 @@ enum SocialService {
         let completed: Int
         let isMe: Bool
         var id: String { username }
+
+        enum CodingKeys: String, CodingKey {
+            case rank, username, displayName, wins, burned, completed, isMe
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            rank = try c.decodeIfPresent(Int.self, forKey: .rank) ?? 0
+            username = try c.decode(String.self, forKey: .username)
+            displayName = try c.decodeIfPresent(String.self, forKey: .displayName) ?? username
+            wins = try c.decodeIfPresent(Int.self, forKey: .wins) ?? 0
+            burned = try c.decodeIfPresent(Int.self, forKey: .burned) ?? 0
+            completed = try c.decodeIfPresent(Int.self, forKey: .completed) ?? 0
+            isMe = try c.decodeIfPresent(Bool.self, forKey: .isMe) ?? false
+        }
     }
 
     /// 广场挑战条目（复用 PK 的公开字段子集）

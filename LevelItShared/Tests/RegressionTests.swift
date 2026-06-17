@@ -67,7 +67,7 @@ struct RegressionTests {
         #expect(task.status == .settled)
     }
 
-    // MARK: - Bug: isFullyComplete 多条件判断
+    // MARK: - Bug: isFullyComplete 不能只看状态
 
     @Test("isFullyComplete: burnedCalories >= target 即为完成")
     func isFullyCompleteByCalories() {
@@ -83,11 +83,27 @@ struct RegressionTests {
         #expect(task.progressPercent >= 100)
     }
 
-    @Test("isFullyComplete: status == .completed 即为完成")
-    func isFullyCompleteByStatus() {
+    @Test("未达标时 status 不能单独把任务变成 completed")
+    func completedStatusRequiresBurnTarget() {
         let task = makeTask(target: 100)
         TaskStateMachine.transition(task, to: .inProgress)
-        TaskStateMachine.transition(task, to: .completed)
+        task.updateProgress(burnedCalories: 99, durationSeconds: 300)
+
+        let result = TaskStateMachine.transition(task, to: .completed)
+
+        #expect(!result)
+        #expect(task.status == .inProgress)
+    }
+
+    @Test("未达标时 completed 也不能继续转 settled")
+    func settledRequiresBurnTarget() {
+        let task = makeTask(target: 100)
+        task.status = .completed
+        task.updateProgress(burnedCalories: 99, durationSeconds: 300)
+
+        let result = TaskStateMachine.transition(task, to: .settled)
+
+        #expect(!result)
         #expect(task.status == .completed)
     }
 

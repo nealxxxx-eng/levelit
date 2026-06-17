@@ -57,5 +57,10 @@ final class AppLifecycleCoordinator {
         // 2. 任务过期检查
         let context = container.mainContext
         TaskExpiryService.checkAndExpire(in: context)
+
+        // 3. PK 进度刷新：把 Apple Watch 等外部运动（仅进 HealthKit、不经磨平
+        //    运动事件）计入进行中的挑战。否则用户必须手动进「朋友 PK」页下拉刷新。
+        //    放在 invalidateCache 之后，refreshAll 内部会 force 重新查询 HealthKit。
+        Task { await PKChallengeProgressService.refreshAll(in: context) }
     }
 }

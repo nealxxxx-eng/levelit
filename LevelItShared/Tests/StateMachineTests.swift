@@ -45,6 +45,7 @@ struct StateMachineTests {
     func completeAndSettle() {
         let task = makeTask(source: .watch)
         TaskStateMachine.transition(task, to: .inProgress)
+        task.updateProgress(burnedCalories: task.targetBurnCalories, durationSeconds: 300)
 
         #expect(TaskStateMachine.transition(task, to: .completed))
         #expect(task.status == .completed)
@@ -125,6 +126,31 @@ struct StateMachineTests {
         let result = TaskStateMachine.transition(task, to: .completed)
         #expect(!result)
         #expect(task.status == .created)
+    }
+
+    @Test("未达到目标不能从 inProgress 转 completed")
+    func cannotCompleteBeforeBurnTarget() {
+        let task = makeTask(source: .watch)
+        TaskStateMachine.transition(task, to: .inProgress)
+        task.updateProgress(burnedCalories: task.targetBurnCalories - 1, durationSeconds: 300)
+
+        let result = TaskStateMachine.transition(task, to: .completed)
+
+        #expect(!result)
+        #expect(task.status == .inProgress)
+        #expect(task.completedAt == nil)
+    }
+
+    @Test("未达到目标不能从 completed 转 settled")
+    func cannotSettleBeforeBurnTarget() {
+        let task = makeTask(source: .watch)
+        task.status = .completed
+        task.updateProgress(burnedCalories: task.targetBurnCalories - 1, durationSeconds: 300)
+
+        let result = TaskStateMachine.transition(task, to: .settled)
+
+        #expect(!result)
+        #expect(task.status == .completed)
     }
 
     // MARK: - Helper

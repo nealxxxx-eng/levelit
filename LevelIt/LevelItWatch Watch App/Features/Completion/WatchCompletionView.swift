@@ -12,10 +12,7 @@ struct WatchCompletionView: View {
     @State private var newBadge: AchievementType?
 
     private var isFullyComplete: Bool {
-        task.burnedCalories >= task.targetBurnCalories ||
-        task.progressPercent >= 100 ||
-        task.status == .completed ||
-        task.status == .settled
+        task.hasMetBurnTarget
     }
 
     var body: some View {

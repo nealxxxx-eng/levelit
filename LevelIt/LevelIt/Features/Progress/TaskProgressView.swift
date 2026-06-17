@@ -165,6 +165,9 @@ struct TaskProgressView: View {
             }
             TaskStateMachine.transition(task, to: .completed)
             try? modelContext.save()
+            Task { @MainActor in
+                await PKChallengeProgressService.refreshForTask(taskId: task.id, in: modelContext)
+            }
             onCompleted(task)
         }
         let newStage = MotivationalQuotes.stage(for: task.progressPercent)
@@ -181,6 +184,9 @@ struct TaskProgressView: View {
             TaskStateMachine.transition(task, to: .completed)
         }
         try? modelContext.save()
+        Task { @MainActor in
+            await PKChallengeProgressService.refreshForTask(taskId: task.id, in: modelContext)
+        }
         onCompleted(task)
     }
 

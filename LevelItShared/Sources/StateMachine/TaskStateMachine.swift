@@ -31,12 +31,17 @@ public enum TaskStateMachine {
         guard canTransition(from: task.status, to: newStatus) else {
             return false
         }
+        guard canApplyTransition(task, to: newStatus) else {
+            return false
+        }
 
         task.status = newStatus
 
         switch newStatus {
         case .completed:
             task.completedAt = Date()
+        case .settled:
+            task.completedAt = task.completedAt ?? Date()
         case .expired:
             task.expiredAt = Date()
         default:
@@ -44,6 +49,16 @@ public enum TaskStateMachine {
         }
 
         return true
+    }
+
+    /// 状态图只描述“从哪到哪”合法；这里补充业务守门条件。
+    private static func canApplyTransition(_ task: DebtTask, to newStatus: TaskStatus) -> Bool {
+        switch newStatus {
+        case .completed, .settled:
+            return task.hasMetBurnTarget
+        default:
+            return true
+        }
     }
 
     /// 所有合法的状态转换表

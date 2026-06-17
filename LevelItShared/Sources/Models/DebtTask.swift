@@ -82,6 +82,11 @@ public final class DebtTask {
         }
     }
 
+    /// 是否已经真实达到本任务要求的消耗目标。
+    public var hasMetBurnTarget: Bool {
+        targetBurnCalories > 0 && burnedCalories >= targetBurnCalories
+    }
+
     /// 今日待执行任务只在创建当天有效；历史欠单留在账本里，不滚入新一天。
     public func isPendingForDay(
         _ referenceDate: Date = Date(),

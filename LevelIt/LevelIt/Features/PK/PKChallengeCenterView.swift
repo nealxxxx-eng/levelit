@@ -639,7 +639,7 @@ struct PKChallengeCenterView: View {
             opponentName: opponent.isEmpty ? nil : opponent,
             targetCalories: challengeType == .streakSprint ? max(1, todayPendingKcal) : Int(targetCalories),
             durationDays: Int(durationDays),
-            linkedTaskId: allTasks.first(where: { $0.isPendingForDay() })?.id
+            linkedTaskId: challengeType == .firstToSettle ? allTasks.first(where: { $0.isPendingForDay() })?.id : nil
         )
 
         isSyncing = true
@@ -774,22 +774,8 @@ struct PKChallengeCenterView: View {
     @MainActor
     private func syncActiveChallenges() async {
         guard AuthSessionStore.isAuthenticated else { return }
-        // isSyncing 由 runSync 统一管理（这里不再单独置位，避免被自身守卫挡掉）
-        let active = challenges.filter { $0.status == .accepted && $0.serverId != nil }
-        for challenge in active {
-            // 在主 actor 上先取出纯值
-            guard let serverId = challenge.serverId else { continue }
-            let isChallenger = challenge.isChallenger
-            let myProgress = challenge.myProgress
-            do {
-                let newOpp = try await PKSyncService.pushProgress(
-                    serverId: serverId, isChallenger: isChallenger, myProgress: myProgress
-                )
-                // 续体在主 actor 上恢复，写回模型是安全的
-                challenge.opponentProgress = newOpp
-            } catch { }
-        }
-        try? modelContext.save()
+        // isSyncing 由 runSync 统一管理；先从本地任务账本重算，再推送服务端。
+        await PKChallengeProgressService.refreshAll(in: modelContext)
     }
 
     /// 将 APNs device token 注册到当前所有有 serverId 的挑战（同样全程主 actor）

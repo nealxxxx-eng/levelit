@@ -11,7 +11,7 @@ struct ResultView: View {
 
     var body: some View {
         VStack(spacing: DS.Spacing.lg) {
-            if task.status == .completed && !animationDone {
+            if task.status == .completed && task.hasMetBurnTarget && !animationDone {
                 // 结清动画
                 SettledAnimationView(
                     foodEmoji: task.foodEmoji,
@@ -28,7 +28,7 @@ struct ResultView: View {
         }
         .navigationTitle("结果")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(!animationDone && task.status == .completed)
+        .navigationBarBackButtonHidden(!animationDone && task.status == .completed && task.hasMetBurnTarget)
     }
 
     // MARK: - Result Content
@@ -86,7 +86,7 @@ struct ResultView: View {
                 Text("还多了 \(task.progressPercent - 100)%，下次可以白嗝一口")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-            } else if task.status == .settled || task.status == .completed {
+            } else if task.status == .settled || (task.status == .completed && task.hasMetBurnTarget) {
                 Text("✅")
                     .font(.system(size: 60))
                 Text("已结清")
@@ -160,7 +160,8 @@ struct ResultView: View {
     // MARK: - Logic
 
     private func settleTask() {
-        TaskStateMachine.transition(task, to: .settled)
+        guard task.hasMetBurnTarget else { return }
+        guard TaskStateMachine.transition(task, to: .settled) else { return }
 
         // 更新统计
         if let stats = try? modelContext.fetch(FetchDescriptor<UserStats>()).first {
@@ -182,6 +183,9 @@ struct ResultView: View {
         // 显式保存 + 发完整快照到 Watch
         try? modelContext.save()
         WCSyncService.shared.sendTaskSnapshot(task)
+        Task { @MainActor in
+            await PKChallengeProgressService.refreshForTask(taskId: task.id, in: modelContext)
+        }
     }
 
     private func formatDuration(_ seconds: Int) -> String {

@@ -11,6 +11,7 @@ struct TodayView: View {
     @State private var intakeToDelete: MealIntake?
 
     private let calendar = Calendar.current
+    private var store: HealthKitDataStore { .shared }
 
     // MARK: - 今日数据源
 
@@ -28,11 +29,15 @@ struct TodayView: View {
     }
 
     private var todayBurned: Int {
-        todayTasks.reduce(0) { $0 + $1.burnedCalories }
+        todayWorkouts.reduce(0) { $0 + $1.calories }
     }
 
     private var todayDurationMinutes: Int {
-        todayTasks.reduce(0) { $0 + $1.durationSeconds } / 60
+        Int(todayWorkouts.reduce(0.0) { $0 + $1.duration } / 60)
+    }
+
+    private var todayWorkouts: [HealthKitImportService.WorkoutSummary] {
+        store.todayWorkoutSummaries
     }
 
     private var activePKCount: Int {
@@ -90,11 +95,18 @@ struct TodayView: View {
                     intakeList
                 }
 
+                if !todayWorkouts.isEmpty {
+                    workoutList
+                }
+
                 todayMetrics
 
                 pkSection
             }
             .padding()
+        }
+        .task {
+            await store.refreshTodayWorkoutSummaries()
         }
         .alert("删除这条记录？", isPresented: .init(
             get: { intakeToDelete != nil },
@@ -419,6 +431,62 @@ struct TodayView: View {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         return f.string(from: d)
+    }
+
+    // MARK: - 今日运动清单（基于 HealthKit）
+
+    private var workoutList: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+            HStack {
+                Text("今日运动记录")
+                    .font(.headline)
+                Spacer()
+                Text("\(todayWorkouts.count) 条")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(todayWorkouts, id: \.id) { workout in
+                HStack(spacing: DS.Spacing.md) {
+                    Image(systemName: workout.iconName)
+                        .font(.title3)
+                        .foregroundStyle(.green)
+                        .frame(width: 28)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(workout.displayName)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                        HStack(spacing: 6) {
+                            Text("\(workout.durationMinutes) 分钟")
+                            Text(workout.source)
+                            Text(timeString(workout.startDate))
+                            if workout.isLevelIt {
+                                Text("磨平")
+                                    .font(.caption2.weight(.medium))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(DS.Colors.accent.opacity(0.14))
+                                    .foregroundStyle(DS.Colors.accent)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Text("\(workout.calories)")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.green)
+                }
+                .padding(DS.Spacing.sm)
+            }
+        }
+        .padding()
+        .background(DS.Colors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
     }
 
     // MARK: - 今日指标
