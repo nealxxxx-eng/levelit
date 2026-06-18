@@ -19,6 +19,9 @@ public enum AppConstants {
     /// 每日加餐缓冲上限。加餐/饮料超过缓冲的部分才建议进入磨平任务。
     public static let maxDailySnackBuffer: Int = 250
 
+    /// 餐次时段边界的模糊区（分钟）：拍照时间落在正餐窗口 start/end ±此值内，提示用户选「正餐/加餐」
+    public static let mealEdgeMinutes: Int = 30
+
     /// Watch 运动进度推送频率 (秒)
     public static let watchProgressSyncInterval: TimeInterval = 5.0
 

@@ -67,7 +67,8 @@ public enum MealClassifier {
         at date: Date,
         profile: UserProfile?,
         config: MealQuotaConfig = .default,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        overrideKind: MealKind? = nil
     ) -> MealVerdict {
         return classify(
             cumulativeKcal: max(0, kcal),
@@ -75,7 +76,8 @@ public enum MealClassifier {
             at: date,
             profile: profile,
             config: config,
-            calendar: calendar
+            calendar: calendar,
+            overrideKind: overrideKind
         )
     }
 
@@ -87,10 +89,12 @@ public enum MealClassifier {
         at date: Date,
         profile: UserProfile?,
         config: MealQuotaConfig = .default,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        overrideKind: MealKind? = nil
     ) -> MealVerdict {
         let safeKcal = max(0, cumulativeKcal)
-        let kind = config.mealKind(at: date, calendar: calendar)
+        // overrideKind：用户在「边缘提示」里手动选了餐次时，跳过时段自动判定。
+        let kind = overrideKind ?? config.mealKind(at: date, calendar: calendar)
 
         // 新用户/无档案：放过校验，按加餐走
         guard let profile = profile else {
@@ -147,5 +151,31 @@ public enum MealClassifier {
                 quotaCalories: quota
             )
         }
+    }
+
+    /// 边缘检测：拍照时间落在某正餐窗口 start/end 边界 ±`AppConstants.mealEdgeMinutes` 内时，
+    /// 返回距离最近的那个正餐 `MealKind`（作为建议），调用方据此弹「正餐 / 加餐」二选一。
+    /// 不在任何边缘区返回 nil（维持原硬判定，不打扰）。
+    public static func edgeSuggestion(
+        at date: Date,
+        config: MealQuotaConfig = .default,
+        calendar: Calendar = .current
+    ) -> MealKind? {
+        let comps = calendar.dateComponents([.hour, .minute], from: date)
+        let m = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+        let edge = AppConstants.mealEdgeMinutes
+
+        var best: (kind: MealKind, dist: Int)?
+        for kind in [MealKind.breakfast, .lunch, .dinner] {
+            guard let w = config.windows[kind] else { continue }
+            for boundary in [w.startMinutes, w.endMinutes] {
+                let dist = abs(m - boundary)
+                guard dist <= edge else { continue }
+                if best == nil || dist < best!.dist {
+                    best = (kind, dist)
+                }
+            }
+        }
+        return best?.kind
     }
 }

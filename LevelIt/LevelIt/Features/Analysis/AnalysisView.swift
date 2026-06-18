@@ -25,6 +25,9 @@ struct AnalysisView: View {
     /// 一旦本次 AnalysisView 实例 classify 过一次就锁住按钮，需要重新拍照才能再触发
     @State private var hasClassified = false
 
+    /// 餐次边缘提示：非 nil 时弹「正餐 / 加餐」二选一，值为建议的正餐 kind
+    @State private var edgeSuggestion: MealKind?
+
     /// 分餐后单份热量（不含实际摄入比例）
     private var dinerAdjusted: Int {
         max(AppConstants.minCalories, originalResult.estimatedCalories / diners)
@@ -135,11 +138,48 @@ struct AnalysisView: View {
                 }
             )
         }
+        .confirmationDialog(
+            "这是加餐还是正餐？",
+            isPresented: Binding(
+                get: { edgeSuggestion != nil },
+                set: { if !$0 { edgeSuggestion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let suggested = edgeSuggestion {
+                Button("\(suggested.emoji) \(suggested.displayName)（正餐）") {
+                    edgeSuggestion = nil
+                    performClassify(overrideKind: suggested)
+                }
+                Button("\(MealKind.snack.emoji) 加餐") {
+                    edgeSuggestion = nil
+                    performClassify(overrideKind: .snack)
+                }
+                Button("取消", role: .cancel) { edgeSuggestion = nil }
+            }
+        } message: {
+            Text("当前时间接近正餐时段边界。选「正餐」达标则只记录不磨平；选「加餐」按加餐进入磨平。")
+        }
     }
 
     // MARK: - 餐次分流
 
     private func classifyAndNavigate() {
+        guard !hasClassified else { return }
+        let now = Date()
+        let profile = UserProfileStore.current
+        let config = MealQuotaConfigStore.current
+        // 餐次边缘：有档案且时间落在正餐窗口边界 ±30 分钟内时，先让用户确认「正餐 / 加餐」。
+        // 无档案（新用户）统一按加餐，不打扰。
+        if profile != nil, let suggested = MealClassifier.edgeSuggestion(at: now, config: config) {
+            edgeSuggestion = suggested
+            return
+        }
+        performClassify(overrideKind: nil)
+    }
+
+    /// 执行分类 + 写 MealIntake + 分流。`overrideKind` 来自边缘提示的用户选择（nil=按时间判定）。
+    private func performClassify(overrideKind: MealKind?) {
         // 防重复：本视图实例只允许 classify 一次
         guard !hasClassified else { return }
         hasClassified = true
@@ -149,8 +189,8 @@ struct AnalysisView: View {
         let config = MealQuotaConfigStore.current
         let thisKcal = effectiveResult.estimatedCalories
 
-        // 1. 先按"现在的时间"判定餐次
-        let kindNow = config.mealKind(at: now)
+        // 1. 餐次：优先用边缘提示里用户选的，否则按"现在的时间"判定
+        let kindNow = overrideKind ?? config.mealKind(at: now)
 
         // 2. 累加同餐次同日已记录的摄入，作为 MealClassifier 的 cumulative 输入
         let alreadyKcal = MealIntakeAggregator.cumulativeKcal(
@@ -163,7 +203,8 @@ struct AnalysisView: View {
             previousCumulativeKcal: alreadyKcal,
             at: now,
             profile: profile,
-            config: config
+            config: config,
+            overrideKind: overrideKind
         )
 
         // 3. 写入 MealIntake（无论判定结果都记录这次摄入事实）

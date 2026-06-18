@@ -1,6 +1,9 @@
 # 磨平 LevelIt — CHANGELOG
 
-## [Unreleased] - 2026-06-17 — PK 进度计入修复
+## [Unreleased] - 2026-06-18 — PK 修复 + 餐次边缘提示
+
+### 新增
+- **餐次时段边缘提示**：拍照/手选食物的时间落在正餐窗口 start/end 边界 ±30 分钟内（`AppConstants.mealEdgeMinutes`）时，弹「正餐 / 加餐」二选一。选正餐按该餐配额判定（达标只记摄入不磨平、超标进磨平），选加餐进加餐磨平流；非边缘时段与新用户（无档案）行为不变、不打扰。`MealClassifier` 新增 `edgeSuggestion` + classify 的 `overrideKind` 参数（不新增 verdict case，避免改动所有 `switch verdict` 调用点）；单测 `MealClassifierEdgeTests`（7 例）。
 
 ### 修复
 - **先结清 / 连续打卡挑战不计 HealthKit 运动**：`firstToSettle / streakSprint` 类型的进度此前只统计磨平还债任务账本，完全不查 HealthKit，导致 Apple Watch 等纯 HealthKit 运动（无对应还债任务）无法计入挑战。`PKChallengeProgressService.localProgress` 改为三种类型统一取 `min(target, max(HealthKit 运动, 还债账本))`，真实运动消耗一律计入（max 去重避免本 App 运动重复计算）。
