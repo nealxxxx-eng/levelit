@@ -513,7 +513,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = A2CZ9A4R9D;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "LevelItWatch-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = LevelItWatch;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "用于读取运动消耗数据，计算磨平进度";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "用于记录运动数据";
@@ -550,7 +551,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = A2CZ9A4R9D;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "LevelItWatch-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = LevelItWatch;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "用于读取运动消耗数据，计算磨平进度";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "用于记录运动数据";

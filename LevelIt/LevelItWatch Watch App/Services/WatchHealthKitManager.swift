@@ -43,12 +43,11 @@ final class WatchHealthKitManager: NSObject {
             return
         }
 
-        // 写入权限: workout + activeEnergy + heartRate
-        let typesToShare: Set<HKSampleType> = [
-            HKQuantityType.workoutType(),
-            HKQuantityType(.activeEnergyBurned),
-            HKQuantityType(.heartRate),
-        ]
+        // 不请求任何写(share)权限。实测：在该 watch 上请求 share（含 workout）会让
+        // requestAuthorization 直接崩溃（连授权窗都不弹）。HKWorkoutSession 运行 + 读取
+        // 运动消耗用于还债并不需要写权限；停止时 finishWorkout 会静默失败（已 try-catch），
+        // 即本次运动不写回 HealthKit，但还债进度照常。
+        let typesToShare: Set<HKSampleType> = []
 
         // 读取权限
         let typesToRead: Set<HKObjectType> = [

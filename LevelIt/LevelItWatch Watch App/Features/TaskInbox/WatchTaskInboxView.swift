@@ -55,7 +55,7 @@ struct WatchTaskInboxView: View {
                         // 避免 SwiftData 对象被 invalidate 后 ForEach 访问 stale 引用闪退。
                         ForEach(pendingTasks, id: \.id) { task in
                             Button {
-                                navigationPath.append(task)
+                                navigationPath.append(task.id)
                             } label: {
                                 taskRow(task)
                             }
@@ -69,15 +69,17 @@ struct WatchTaskInboxView: View {
             .navigationDestination(for: String.self) { route in
                 if route == "quickadd" {
                     WatchQuickAddView { createdTask in
-                        // 清掉 quickadd 页，直接跳到运动页
+                        // 清掉 quickadd 页，直接跳到运动页（用 id 路由）
                         navigationPath.removeLast(navigationPath.count)
-                        navigationPath.append(createdTask)
+                        navigationPath.append(createdTask.id)
                     }
-                }
-            }
-            .navigationDestination(for: DebtTask.self) { task in
-                WatchWorkoutContainerView(task: task) {
-                    navigationPath = NavigationPath()
+                } else if let task = allTasks.first(where: { $0.id == route }) {
+                    // route 为 taskId：用稳定的 id 路由。直接把 @Model 对象放进
+                    // NavigationPath 在 watchOS 上不会触发跳转（Hashable 基于
+                    // PersistentIdentifier，解析不稳定），故统一改走 id。
+                    WatchWorkoutContainerView(task: task) {
+                        navigationPath = NavigationPath()
+                    }
                 }
             }
             .onAppear {
@@ -136,8 +138,8 @@ struct WatchTaskInboxView: View {
 
             Button {
                 newTaskAlert = nil
-                if let task = pendingTasks.first(where: { $0.id == alert.id }) {
-                    navigationPath.append(task)
+                if allTasks.contains(where: { $0.id == alert.id }) {
+                    navigationPath.append(alert.id)
                 }
             } label: {
                 Label("开始磨平", systemImage: "play.fill")
@@ -173,7 +175,7 @@ struct WatchTaskInboxView: View {
             if let activeTask = candidates.first {
                 print("[Recovery] 导航到任务: \(activeTask.foodName) (id=\(activeTask.id.prefix(8)))")
                 WatchHapticManager.tap()
-                navigationPath.append(activeTask)
+                navigationPath.append(activeTask.id)
             } else {
                 print("[Recovery] 无匹配任务，停止孤儿 session")
                 WatchHealthKitManager.shared.stop()

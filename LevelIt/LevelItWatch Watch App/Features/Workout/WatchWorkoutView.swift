@@ -192,19 +192,14 @@ struct WatchWorkoutView: View {
             return
         }
 
-        let status = WatchHealthKitManager.isCurrentlyAuthorized()
-
-        if status {
+        // 请求授权后总是尝试真实运动（start 失败会在 launchWorkout 内自动降级 mock）。
+        // 不用 isCurrentlyAuthorized()——它只反映写(share)状态，而我们只请求读权限，
+        // 写状态恒为 notDetermined 会导致永远走 mock。
+        startPending = true
+        Task {
+            await hkManager.requestAuthorization()
+            startPending = false
             launchWorkout(useMock: false)
-        } else {
-            // 未授权 → 先请求授权再决定
-            startPending = true
-            Task {
-                await hkManager.requestAuthorization()
-                startPending = false
-                let authorized = WatchHealthKitManager.isCurrentlyAuthorized()
-                launchWorkout(useMock: !authorized)
-            }
         }
     }
 

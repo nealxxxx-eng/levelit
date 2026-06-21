@@ -1,11 +1,15 @@
 # 磨平 LevelIt — CHANGELOG
 
-## [Unreleased] - 2026-06-18 — PK 修复 + 餐次边缘提示
+## [Unreleased] - 2026-06-21 — PK/餐次/抵扣 + Watch 运动修复
 
 ### 新增
+- **摄入抵扣磨平**：摄入编辑页新增「用今日运动抵扣磨平」入口（仅对未磨平的摄入显示）。把这条摄入变成磨平任务并用今日尚未抵扣的运动立即结算——够则直接结清、部分则记为进行中待磨平、今日无运动则创建待磨平任务。账本口径 `可用 = max(0, 今日 HealthKit 运动 − 今日已还债)`，保守不超发。纯决策 `IntakeOffsetPlan`（`LevelItShared`）+ 单测 6 例；取数/状态机在 `IntakeOffsetService`。
 - **餐次时段边缘提示**：拍照/手选食物的时间落在正餐窗口 start/end 边界 ±30 分钟内（`AppConstants.mealEdgeMinutes`）时，弹「正餐 / 加餐」二选一。选正餐按该餐配额判定（达标只记摄入不磨平、超标进磨平），选加餐进加餐磨平流；非边缘时段与新用户（无档案）行为不变、不打扰。`MealClassifier` 新增 `edgeSuggestion` + classify 的 `overrideKind` 参数（不新增 verdict case，避免改动所有 `switch verdict` 调用点）；单测 `MealClassifierEdgeTests`（7 例）。
 
 ### 修复
+- **Watch 运动多个修复**（真机 watchOS）：
+  - 任务点击不进运动页：`@Model` 对象放进 `NavigationPath` 在 watchOS 不触发跳转 → 改用稳定的 taskId(String) 路由。
+  - 点「开始磨平」崩溃（三因叠加）：① 请求 HealthKit **写(share)权限**在该 watch 直接崩（连授权窗都不弹）→ 改为**只请求读权限**（运动还债不需写；停止时 `finishWorkout` 静默失败不影响进度）；② `WKBackgroundModes(workout-processing)` 被 `GENERATE_INFOPLIST_FILE` 增量构建反复弄丢 → 改用完整实体 `LevelItWatch-Info.plist`（关闭 GENERATE）稳定注入；③ `startWorkout` 不再依赖 `isCurrentlyAuthorized`（只反映写状态、会误判一直走 mock），授权后直接尝试真实运动、失败再降级。
 - **先结清 / 连续打卡挑战不计 HealthKit 运动**：`firstToSettle / streakSprint` 类型的进度此前只统计磨平还债任务账本，完全不查 HealthKit，导致 Apple Watch 等纯 HealthKit 运动（无对应还债任务）无法计入挑战。`PKChallengeProgressService.localProgress` 改为三种类型统一取 `min(target, max(HealthKit 运动, 还债账本))`，真实运动消耗一律计入（max 去重避免本 App 运动重复计算）。
 - **统计窗口右边界过期导致漏算当天运动**：`challengeWindow` 旧实现 `end = 开始 + durationDays 天`，挑战进行超过该天数后，当天的新运动被 `startDate < end` 排除，而更早的旧运动反被计入（实测现象：算了周一的运动、漏了今天的）。改为统计窗口 `[开始, 现在]`，提取为可测纯函数 `PKProgressWindow`（`LevelItShared/Sources/Utils/`）+ 单测 `PKProgressWindowTests`。`durationDays` 仅用于过期判断，不再限制统计上界。
 - **排行榜因无 username 用户而整体解码失败**：后端 `getPublicUserMap` 对未设 username 的用户返回 `username:null`，而客户端 `LeaderboardRow.username` 是必需解码字段，任一无名用户都会让整个排行榜解码失败（弹 "data couldn't be read because it is missing"）。`username` 改为容错（null/缺失时用 displayName 兜底），行 `id` 改为 `rank+username` 避免兜底后 id 冲突。
