@@ -26,6 +26,10 @@ struct MealIntakeEditView: View {
     // 删除确认
     @State private var showDeleteConfirm = false
 
+    // 抵扣磨平
+    @State private var offsetPreview: IntakeOffsetService.Preview?
+    @State private var isOffsetting = false
+
     private var linkedActiveTask: DebtTask? {
         guard let id = intake.debtTaskId,
               let t = allTasks.first(where: { $0.id == id })
@@ -41,6 +45,13 @@ struct MealIntakeEditView: View {
         return (t.status == .created || t.status == .synced) ? nil : t
     }
 
+    /// 是否可"抵扣磨平"：该摄入无有效关联任务（无关联，或关联任务已 cancelled/expired）
+    private var canOffset: Bool {
+        guard let id = intake.debtTaskId else { return true }
+        guard let t = allTasks.first(where: { $0.id == id }) else { return true }
+        return t.status == .cancelled || t.status == .expired
+    }
+
     private var hasChanges: Bool {
         foodName != intake.foodName
             || mealKind != intake.mealKind
@@ -52,6 +63,9 @@ struct MealIntakeEditView: View {
             foodSection
             mealKindSection
             calorieSection
+            if canOffset {
+                offsetSection
+            }
             if let locked = linkedLockedTask {
                 lockedTaskNoticeSection(locked)
             }
@@ -60,6 +74,11 @@ struct MealIntakeEditView: View {
         }
         .navigationTitle("编辑摄入")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if canOffset {
+                offsetPreview = await IntakeOffsetService.preview(for: intake, in: modelContext)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("保存") { onSavePressed() }
@@ -173,6 +192,70 @@ struct MealIntakeEditView: View {
             }
         } footer: {
             Text("修改摄入热量不会影响该磨平任务（已开始/已完成的任务保留账本完整性）")
+        }
+    }
+
+    // MARK: - 抵扣磨平入口
+
+    @ViewBuilder
+    private var offsetSection: some View {
+        Section {
+            if let p = offsetPreview {
+                VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+                    HStack {
+                        Text("今日可用运动")
+                        Spacer()
+                        Text("\(p.available) kcal").foregroundStyle(DS.Colors.accent)
+                    }
+                    HStack {
+                        Text("本餐目标")
+                        Spacer()
+                        Text("\(p.target) kcal").foregroundStyle(.secondary)
+                    }
+                    Text(offsetHint(p))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        performOffset()
+                    } label: {
+                        Text(isOffsetting ? "处理中…" : "用今日运动抵扣磨平")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isOffsetting)
+                }
+            } else {
+                HStack(spacing: DS.Spacing.sm) {
+                    ProgressView()
+                    Text("计算今日可用运动…").foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("磨平这条摄入")
+        } footer: {
+            Text("把这条摄入变成磨平任务，并用今日尚未抵扣的运动立即结算。")
+        }
+    }
+
+    private func offsetHint(_ p: IntakeOffsetService.Preview) -> String {
+        if p.plan.settled {
+            return "✅ 今日运动足够，将直接结清"
+        } else if p.plan.offset > 0 {
+            return "抵扣 \(p.plan.offset) kcal，还差 \(p.plan.remaining) kcal 待磨平"
+        } else {
+            return "今日暂无可用运动，将创建一个待磨平任务"
+        }
+    }
+
+    private func performOffset() {
+        guard !isOffsetting else { return }
+        isOffsetting = true
+        Task {
+            await IntakeOffsetService.offset(intake: intake, in: modelContext)
+            isOffsetting = false
+            dismiss()
         }
     }
 
