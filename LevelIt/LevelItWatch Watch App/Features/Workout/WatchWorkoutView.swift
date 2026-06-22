@@ -6,6 +6,7 @@ import LevelItShared
 
 struct WatchWorkoutView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @Bindable var task: DebtTask
     var onFinish: () -> Void
 
@@ -161,9 +162,16 @@ struct WatchWorkoutView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     withAnimation { showRecoveryBanner = false }
                 }
+            } else {
+                // 运动被系统运动抢占结束后回到本页：合并这段时间的 HealthKit 消耗
+                checkInterruptedMerge()
             }
         }
         .onDisappear { cleanup() }
+        .onChange(of: scenePhase) { _, phase in
+            // 回到前台时检查：运动是否被系统运动抢占中断，是则合并这段 HealthKit 消耗
+            if phase == .active { checkInterruptedMerge() }
+        }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             guard workoutStarted else { return }
             syncFromSource()
@@ -240,6 +248,10 @@ struct WatchWorkoutView: View {
         }
 
         workoutStarted = true
+        // 记录任务首次磨平开始时刻（仅真实运动）——被系统运动抢占后用于合并时段消耗
+        if !usingMock {
+            WatchHealthKitManager.recordWorkoutStartIfNeeded(taskId: task.id)
+        }
         // 同步 "已开始/已恢复" 状态给 iPhone
         try? modelContext.save()
         WatchSyncReceiver.shared.sendStatusUpdate(taskId: task.id, status: .inProgress, task: task)
@@ -278,9 +290,45 @@ struct WatchWorkoutView: View {
             }
             TaskStateMachine.transition(task, to: .completed)
         }
+        WatchHealthKitManager.clearWorkoutStart(taskId: task.id)
         try? modelContext.save()
         WatchSyncReceiver.shared.sendStatusUpdate(taskId: task.id, status: task.status, task: task)
         onFinish()
+    }
+
+    /// 运动被系统运动抢占结束后，回到本页时合并 [磨平开始, 现在] 的 HealthKit 总消耗。
+    /// 达标→进完成页；未达标→更新进度并保留未完成（可再点开始磨平继续）。静默，不弹窗。
+    private func checkInterruptedMerge() {
+        guard task.status == .inProgress || task.status == .paused else { return }
+        // 真实运动被系统运动抢占后：session 已结束(isRunning=false)，但本任务有记录的开始时刻。
+        // 不看 workoutStarted——被抢占时它仍为 true，会把合并误挡掉。运动中 isRunning=true 不触发。
+        guard !hkManager.isRunning else { return }
+        guard let startAt = WatchHealthKitManager.workoutStart(taskId: task.id) else { return }
+
+        Task {
+            let hkTotal = await WatchHealthKitManager.energyBurned(from: startAt, to: Date())
+            let plan = WorkoutMergePlan.merge(
+                existing: task.burnedCalories,
+                healthKitTotal: hkTotal,
+                target: task.targetBurnCalories
+            )
+            await MainActor.run {
+                task.updateProgress(burnedCalories: plan.burned, durationSeconds: task.durationSeconds)
+                if plan.settled {
+                    if task.status == .paused {
+                        TaskStateMachine.transition(task, to: .inProgress)
+                    }
+                    TaskStateMachine.transition(task, to: .completed)
+                    WatchHealthKitManager.clearWorkoutStart(taskId: task.id)
+                    try? modelContext.save()
+                    WatchSyncReceiver.shared.sendStatusUpdate(taskId: task.id, status: task.status, task: task)
+                    onFinish()
+                } else {
+                    try? modelContext.save()
+                    WatchSyncReceiver.shared.sendStatusUpdate(taskId: task.id, status: task.status, task: task)
+                }
+            }
+        }
     }
 
     @State private var showMockSwitch = false

@@ -194,6 +194,44 @@ final class WatchHealthKitManager: NSObject {
         isSelfStopping = false
     }
 
+    // MARK: - 时段消耗查询 + 开始时刻记录（运动被系统运动抢占后合并用）
+
+    /// 查询 [start, end] 内的 HealthKit 活动能量总和(kcal)。自动含磨平 + 系统运动两段。
+    static func energyBurned(from start: Date, to end: Date) async -> Int {
+        guard HKHealthStore.isHealthDataAvailable(), end > start else { return 0 }
+        let store = HKHealthStore()
+        let type = HKQuantityType(.activeEnergyBurned)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        return await withCheckedContinuation { cont in
+            let q = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate,
+                                      options: .cumulativeSum) { _, stats, _ in
+                let kcal = stats?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
+                cont.resume(returning: max(0, Int(kcal)))
+            }
+            store.execute(q)
+        }
+    }
+
+    // 记录"任务首次开始磨平的时刻"——被系统运动抢占后用于查 [开始, 现在] 时段消耗合并。
+    // 用 UserDefaults 持久化（不改 SwiftData model，避免迁移）。只记首次，不覆盖，
+    // 保证 [开始, 现在] 始终覆盖该任务的全部运动段（磨平 + 系统 + 继续）。
+    private static func startKey(_ taskId: String) -> String { "levelit.workoutStart.\(taskId)" }
+
+    static func recordWorkoutStartIfNeeded(taskId: String, at date: Date = Date()) {
+        let key = startKey(taskId)
+        if UserDefaults.standard.object(forKey: key) == nil {
+            UserDefaults.standard.set(date, forKey: key)
+        }
+    }
+
+    static func workoutStart(taskId: String) -> Date? {
+        UserDefaults.standard.object(forKey: startKey(taskId)) as? Date
+    }
+
+    static func clearWorkoutStart(taskId: String) {
+        UserDefaults.standard.removeObject(forKey: startKey(taskId))
+    }
+
     func reset() {
         stop()
         burnedCalories = 0
